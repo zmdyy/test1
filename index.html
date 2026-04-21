@@ -1,0 +1,2813 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生成绩分析系统 (矢量优化版)</title>
+    
+    <script src="echarts.min.js"></script>
+    <script src="xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --chart-font-size: 14px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            padding: 20px;
+            padding-bottom: 48px; /* 底部留白，避免最后一行图表贴边、兼顾固定导航按钮 */
+        }
+        
+        /* 页面容器：屏幕预览可纵向完整滚动；打印仍按 @media print 的 A4 */
+        .container {
+            width: min(210mm, 100%);
+            max-width: 210mm;
+            min-height: auto;
+            margin: 0 auto;
+            padding: 6mm 8mm;
+            position: relative;
+            overflow: visible;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        /* 报告内容区域 */
+        #report-content {
+            display: flex;
+            flex-direction: column;
+            gap: 8px; /* 减小间距 */
+        }
+        
+        /* 顶部控件区域 */
+        .controls-panel {
+             margin-bottom: 5px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        
+        .top-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 4px 0;
+        }
+
+        .top-title {
+            font-size: 18px;
+            color: #2c3e50;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        
+        .upload-section {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+            flex: 1;
+            min-width: 280px;
+        }
+
+        .upload-section .upload-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .file-queue-panel {
+            width: 100%;
+            border: 1px dashed #bdc3c7;
+            border-radius: 6px;
+            padding: 8px;
+            background: #fafbfc;
+            min-height: 48px;
+        }
+
+        .file-queue-panel.drag-over {
+            border-color: #3498db;
+            background: #ebf5fb;
+        }
+
+        .file-queue-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+        }
+
+        .file-queue-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .file-queue-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            margin-bottom: 4px;
+            background: #fff;
+            border: 1px solid #e1e4e8;
+            border-radius: 4px;
+            cursor: default;
+        }
+
+        .file-queue-item.dragging {
+            opacity: 0.55;
+        }
+
+        .file-queue-item .drag-handle {
+            cursor: grab;
+            color: #95a5a6;
+            user-select: none;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .file-queue-item .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .file-queue-item .exam-label-input {
+            flex: 1;
+            min-width: 100px;
+            max-width: 220px;
+            padding: 4px 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+
+        .file-queue-item .file-origin-name {
+            flex: 1;
+            min-width: 80px;
+            font-size: 12px;
+            color: #7f8c8d;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-row-remove {
+            border: none;
+            background: #ecf0f1;
+            color: #c0392b;
+            width: 26px;
+            height: 26px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .file-row-remove:hover {
+            background: #fadbd8;
+        }
+
+        .import-run-btn {
+            background-color: #16a085;
+        }
+
+        .import-run-btn:hover {
+            background-color: #138d75;
+        }
+
+        .import-run-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .exam-labels-panel {
+            width: 100%;
+            margin-top: 6px;
+            padding: 8px;
+            border-radius: 6px;
+            background: #f0f9ff;
+            border: 1px solid #bee5eb;
+        }
+
+        .exam-labels-panel[hidden] {
+            display: none !important;
+        }
+
+        .exam-labels-panel .exam-labels-title {
+            font-size: 13px;
+            color: #2c3e50;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        .exam-labels-panel .exam-labels-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .exam-labels-panel .exam-label-field {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .exam-labels-panel .exam-label-field span.hint {
+            font-size: 11px;
+            color: #7f8c8d;
+        }
+
+        .exam-labels-panel .exam-label-input-post {
+            width: 140px;
+            padding: 4px 8px;
+            border: 1px solid #85c1e9;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+        
+        .upload-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4mm;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        
+        .upload-btn:hover {
+            background-color: #2980b9;
+        }
+        
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .export-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4mm;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+        
+        .export-excel { background-color: #27ae60; color: white; }
+        .export-single-pdf { background-color: #f39c12; color: white; } 
+        .export-batch-pdf { background-color: #e74c3c; color: white; } 
+
+        .export-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); }
+        .hidden { display: none; }
+        .note { font-size: 14px; color: #7f8c8d; }
+        
+        /* 搜索与自定义控件 */
+        .search-section, .customization-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            padding: 8px;
+            background-color: #f8f9fa;
+            border-radius: 6mm;
+            flex-wrap: wrap;
+        }
+        
+        /* 学生信息 */
+        .student-info {
+            text-align: center;
+            padding: 4px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 4px;
+        }
+        
+        .student-name {
+            font-size: 24px;
+            color: #3498db;
+            font-weight: bold;
+        }
+        
+        /* 图表布局 */
+        .main-charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr; /* 两列布局，总分排名和雷达图并排 */
+            gap: 12px; /* 增加间距，给图表更多呼吸空间 */
+            margin-bottom: 15px;
+        }
+        
+        .main-charts .chart-box {
+            width: 100%; /* 确保每个图表占满其列 */
+            min-width: 0; /* 允许图表容器在grid中收缩 */
+        }
+        
+        .chart-box {
+            background-color: white;
+            border-radius: 3mm; /* 减小圆角 */
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            border: 1px solid #eef;
+            padding: 8px; /* 增加padding给内部内容更多空间 */
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chart-title {
+            font-size: 13px; /* 减小字体 */
+            color: #2c3e50;
+            margin-bottom: 6px; /* 增加间距 */
+            margin-top: 4px;
+            text-align: center;
+            font-weight: bold;
+            flex-shrink: 0; /* 防止标题被压缩 */
+        }
+
+        /* 科目小图表标题样式 */
+        .subject-chart-box .chart-title {
+            font-size: 12px;
+            margin-bottom: 4px;
+            margin-top: 2px;
+        }
+
+        .echarts-container {
+            width: 100%;
+            flex-grow: 1;
+        }
+
+        /* 确保图表容器有固定高度以便 ECharts 初始化 */
+        #totalRankChartContainer { height: 220px; } /* 增加高度，给横轴标签更多空间 */
+        #radarChartContainer { height: 220px; } /* 增加高度，给横轴标签更多空间 */ 
+        
+        .subject-ranks-container {
+            grid-column: 1 / -1; /* 跨越所有列 */
+            padding: 8px; /* 增加容器内边距 */
+        }
+
+        .subjects-charts {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr); /* 改为2列布局，给每个图表更多宽度 */
+            gap: 12px; /* 增加间距 */
+        }
+        
+        .subject-chart-box {
+             height: 190px; /* 增加高度，给横轴标签显示空间 */
+             display: flex;
+             flex-direction: column;
+             min-width: 0; /* 允许图表在grid中收缩 */
+        }
+        
+        /* 导航按钮 */
+        .nav-buttons {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 100;
+            padding: 0 20px;
+        }
+        
+        .nav-btn {
+            pointer-events: auto;
+            background-color: rgba(52, 152, 219, 0.8);
+            color: white;
+            border: none;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .nav-btn:hover {
+            background-color: #2980b9;
+            transform: scale(1.1);
+        }
+
+        /* 搜索框样式 */
+        .search-input-wrapper { position: relative; flex: 1; max-width: 400px; }
+        .search-input { width: 100%; padding: 6px 12px; border: 1px solid #bdc3c7; border-radius: 4mm; font-size: 14px; }
+        .autocomplete-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #bdc3c7; border-top: none; border-radius: 0 0 4mm 4mm; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); display: none; }
+        .autocomplete-dropdown.show { display: block; }
+        .autocomplete-item { padding: 8px 12px; cursor: pointer; transition: background-color 0.2s; font-size: 14px; }
+        .autocomplete-item:hover, .autocomplete-item.active { background-color: #3498db; color: white; }
+        .no-results { padding: 8px 12px; color: #7f8c8d; }
+
+        /* 打印样式 */
+        @media print {
+            @page {
+                size: A4;
+                margin: 10mm;
+            }
+
+            body {
+                background-color: white;
+                padding: 0;
+                padding-bottom: 0;
+            }
+
+            .container {
+                max-width: none;
+                width: 100%;
+                box-shadow: none;
+                border-radius: 0;
+            }
+
+
+            .controls-panel,
+            .nav-buttons,
+            .top-controls,
+            .search-section,
+            .customization-controls {
+                display: none !important;
+            }
+
+            .chart-box, .subject-chart-box {
+                page-break-inside: avoid; /* 防止图表在打印时被截断 */
+                box-shadow: none;
+                border: true; /* 移除打印时的外边框 */
+            }
+
+            /* 雷达图容器保留边框 */
+            #radarChartContainer { height: 260px !important; }
+
+            /* 报告内容区域 - 压缩间距 */
+            #report-content {
+                gap: 4px;
+            }
+
+            .main-charts {
+                /* 打印时保持与屏幕显示一致的布局 */
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                margin-bottom: 10px;
+            }
+
+            .subjects-charts {
+                /* 打印时保持与屏幕显示一致的2列布局 */
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px; /* 增大20%间距 (6px -> 8px) */
+            }
+
+            .chart-box {
+                padding: 4px;
+                margin: 0;
+            }
+
+            .subject-chart-box {
+                padding: 0;
+                margin: 0;
+            }
+
+            .chart-title {
+                font-size: 11px;
+                margin-bottom: 2px;
+                margin-top: 2px;
+            }
+
+            /* 科目小图表标题 */
+            .subject-chart-box .chart-title {
+                font-size: 11px;
+                margin-bottom: 2px;
+                margin-top: 1px;
+            }
+
+            .student-name {
+                font-size: 16px;
+                margin-bottom: 2px;
+            }
+
+            .subject-ranks-container {
+                padding: 4px;
+            }
+
+            .echarts-container {
+                /* 确保 ECharts 图表在打印时正确渲染 */
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            /* 打印时压缩图表高度，确保所有内容在同一页面 */
+            #totalRankChartContainer { height: 160px !important; }
+            #radarChartContainer { height: 160px !important; }
+            .subject-chart-box { height: 170px !important; }
+
+            /* 科目图表标题区域压缩 */
+            #subjectsChartTitle {
+                font-size: 12px !important;
+                margin: 2px 0 !important;
+            }
+
+            /* 防止任何元素被分页 */
+            .chart-box, .subject-chart-box, .main-charts, .subjects-charts {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+
+            /* 批量打印容器样式 */
+            #batch-print-container {
+                display: block !important;
+                position: static !important;
+                left: 0 !important;
+                width: 100% !important;
+            }
+
+            #batch-print-container #main-container {
+                display: block !important;
+                page-break-after: always !important;
+                break-after: page !important;
+                width: 100% !important;
+                min-height: 100vh !important;
+            }
+
+            /* 隐藏原始主容器，显示批量打印容器 */
+            /* 但保留.printing类的主容器（单报告导出使用） */
+            body > #main-container:not(#batch-print-container #main-container):not(.printing) {
+                display: none !important;
+            }
+
+            /* 单报告导出时显示主容器 */
+            #main-container.printing {
+                display: block !important;
+            }
+        }
+        
+    </style>
+</head>
+<body>
+
+    <div class="container" id="main-container">
+        <div class="controls-panel">
+            <div class="top-controls">
+                <div class="top-title">学生成绩分析系统</div>
+                <section class="upload-section">
+                    <div class="upload-row">
+                        <input type="file" id="fileInput" accept=".xlsx, .xls" class="hidden" multiple>
+                        <button type="button" class="upload-btn" id="uploadBtn">选择文件</button>
+                        <button type="button" class="upload-btn import-run-btn" id="importRunBtn" disabled>按此顺序导入</button>
+                    </div>
+                    <div id="fileQueuePanel" class="file-queue-panel" title="可将文件从资源管理器拖入此区域">
+                        <div class="file-queue-toolbar">
+                            <span class="note" id="fileQueueHint">将文件拖入下方框内，或点击「选择文件」追加；拖动☰调整顺序后点「按此顺序导入」。图表横轴顺序与列表从上到下一致。</span>
+                        </div>
+                        <ul id="fileQueueList" class="file-queue-list"></ul>
+                    </div>
+                    <div id="examLabelsPanel" class="exam-labels-panel" hidden>
+                        <div class="exam-labels-title">图表中考试名称（与横轴一致，可直接修改）</div>
+                        <div id="examLabelsRow" class="exam-labels-row"></div>
+                        <button type="button" id="resetImportBtn" style="margin-top:8px;padding:4px 10px;font-size:12px;cursor:pointer;border:1px solid #85c1e9;background:#fff;border-radius:4px;color:#2980b9;">重新选择考试文件</button>
+                    </div>
+                    <div id="fileName" class="note">支持：① 原 12 表「排名」模板；② 原始分数表（自动算排名；多行表头；英语笔试/听说分列；多文件按姓名合并）</div>
+                </section>
+                <div class="export-buttons">
+                    <button class="export-btn export-excel" id="exportExcel" disabled>导出数据</button>
+                    <button class="export-btn export-single-pdf" id="printSinglePdfButton" disabled>导出当前报告为PDF</button>
+                    <button class="export-btn export-batch-pdf" id="printAllPdfButton" disabled>批量导出所有PDF</button>
+                </div>
+            </div>
+            
+            <div class="search-section">
+                <label class="search-label">搜索学生：</label>
+                <div class="search-input-wrapper">
+                    <input type="text" id="studentSearch" class="search-input" placeholder="输入姓名中的任意字符进行搜索..." autocomplete="off">
+                    <div id="autocompleteDropdown" class="autocomplete-dropdown"></div>
+                </div>
+            </div>
+            
+            <div class="customization-controls">
+                 <div class="control-group">
+                    <label>显示模式:</label>
+                    <select id="displayModeSelect" class="select">
+                        <option value="ranking">排名变化</option>
+                        <option value="score">分数变化</option>
+                    </select>
+                </div>
+                 <div class="control-group">
+                    <label>字体大小:</label>
+                    <input type="range" id="fontSizeSlider" min="10" max="20" value="12" class="slider">
+                    <span id="fontSizeValue">12px</span>
+                </div>
+                <div class="control-group">
+                    <label>主题颜色:</label>
+                    <input type="color" id="lineColorPicker" value="#5470c6" class="color-picker">
+                </div>
+                <div class="control-group">
+                    <label>点标记:</label>
+                    <select id="pointStyleSelect" class="select">
+                        <option value="circle">圆形</option>
+                        <option value="rect">方形</option>
+                        <option value="triangle">三角</option>
+                        <option value="diamond">菱形</option>
+                        <option value="none">无</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>点大小:</label>
+                    <input type="range" id="pointSizeSlider" min="4" max="12" value="8" class="slider">
+                    <span id="pointSizeValue">8px</span>
+                </div>
+                <div class="control-group">
+                    <label>线条粗细:</label>
+                    <input type="range" id="lineWidthSlider" min="1" max="5" value="2" class="slider">
+                    <span id="lineWidthValue">2px</span>
+                </div>
+                <div class="control-group">
+                    <label>显示数值:</label>
+                    <input type="checkbox" id="showDataLabels" checked class="checkbox">
+                </div>
+            </div>
+        </div>
+
+        <div id="report-content">
+            <div class="student-info">
+                <h2 class="student-name" id="currentStudentName">—</h2>
+            </div>
+            
+            <div class="main-charts">
+                <div class="chart-box" id="totalRankChartBox">
+                    <h3 class="chart-title" id="totalChartTitle">总分排名变化</h3>
+                    <div id="totalRankChartContainer" class="echarts-container"></div>
+                </div>
+                <div class="chart-box" id="radarChartBox">
+                     
+                    <div id="radarChartContainer" class="echarts-container"></div>
+                </div>
+            </div>
+            
+            <div class="chart-box subject-ranks-container">
+                <h3 class="chart-title" id="subjectsChartTitle">各科目排名变化</h3>
+                <div class="subjects-charts">
+                    <div class="subject-chart-box" id="chartBox-english"><h4 class="chart-title">英语/听说</h4><div id="englishRankChart" class="echarts-container"></div></div>
+                    <div class="subject-chart-box" id="chartBox-chinese"><h4 class="chart-title">语文</h4><div id="chineseRankChart" class="echarts-container"></div></div>
+                    <div class="subject-chart-box" id="chartBox-math"><h4 class="chart-title">数学</h4><div id="mathRankChart" class="echarts-container"></div></div>
+                    <div class="subject-chart-box" id="chartBox-physics"><h4 class="chart-title">物理</h4><div id="physicsRankChart" class="echarts-container"></div></div>
+                    <div class="subject-chart-box" id="chartBox-history"><h4 class="chart-title">历史</h4><div id="historyRankChart" class="echarts-container"></div></div>
+                    <div class="subject-chart-box" id="chartBox-daofa"><h4 class="chart-title">道法</h4><div id="daofaRankChart" class="echarts-container"></div></div>
+                    <div class="subject-chart-box" id="chartBox-chemistry"><h4 class="chart-title">化学</h4><div id="chemistryRankChart" class="echarts-container"></div></div>
+                    <div class="subject-chart-box" id="chartBox-bioGeo"><h4 class="chart-title">生物/地理</h4><div id="bioGeoRankChart" class="echarts-container"></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="nav-buttons">
+        <button class="nav-btn prev-btn" id="prevStudent" disabled>←</button>
+        <button class="nav-btn next-btn" id="nextStudent" disabled>→</button>
+    </div>
+    
+
+    <script>
+        // 全局变量
+        let echartsInstances = {};
+        let parsedSheets = {};
+        let currentRowIndex = 0;
+        /** 待导入文件队列（顺序即考试顺序）；每项 { id, file, label } */
+        let queuedFileItems = [];
+        let fileQueueIdSeq = 0;
+        /** 显示模式：'ranking' 显示排名数据，'score' 显示原始分数 */
+        let displayMode = 'ranking';
+        
+        // 矢量优化：定义 ECharts 渲染器为 SVG
+        const CHART_RENDERER = 'svg'; 
+
+        // 科目定义
+        const subjects = [
+            { id: 'english', name: '英语/听说' },
+            { id: 'chinese', name: '语文' }, { id: 'math', name: '数学' },
+            { id: 'physics', name: '物理' }, { id: 'history', name: '历史' },
+            { id: 'daofa', name: '道法' }, { id: 'chemistry', name: '化学' },
+            { id: 'bioGeo', name: '生物/地理' } // 合并生物和地理
+        ];
+
+        // 初始化所有图表实例
+        function initCharts() {
+            const rendererOptions = { renderer: CHART_RENDERER };
+            
+            // 尝试先销毁旧实例，确保实例的唯一性
+            const disposeAndInit = (id) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    // 尝试先销毁旧实例
+                    const instanceName = id.replace(/ChartContainer|RankChart/g, ''); 
+                    if (echartsInstances[instanceName] && !echartsInstances[instanceName].isDisposed()) {
+                        echartsInstances[instanceName].dispose();
+                    }
+                    echartsInstances[instanceName] = echarts.init(el, null, rendererOptions);
+                    return echartsInstances[instanceName];
+                }
+                return null;
+            };
+
+            // 初始化主图表
+            echartsInstances.total = disposeAndInit('totalRankChartContainer');
+            echartsInstances.radar = disposeAndInit('radarChartContainer');
+            
+            // 初始化科目图表
+            subjects.forEach(subject => {
+                echartsInstances[subject.id] = disposeAndInit(`${subject.id}RankChart`);
+            });
+            
+            // 监听窗口大小变化，确保所有图表自适应缩放 
+            window.addEventListener('resize', () => {
+                // 只有主容器可见时才进行 resize
+                if(document.getElementById('main-container').style.display !== 'none') {
+                    // 使用 requestAnimationFrame 或更短的 setTimeout
+                    setTimeout(() => {
+                        Object.values(echartsInstances).forEach(chart => {
+                            if (chart && !chart.isDisposed()) {
+                                chart.resize();
+                            }
+                        });
+                    }, 200);
+                }
+            });
+        }
+        
+        
+        // 更新学生显示 - 增加可选的图表实例集参数和行索引参数
+        function updateStudentDisplay(name, chartInstancesToUse, rowIndex) {
+             // 【修复点 2】使用传入的实例集，如果未传入，则使用全局实例
+             const instances = chartInstancesToUse || echartsInstances;
+
+             if (!parsedSheets.total || !parsedSheets.total.rows || parsedSheets.total.rows.length === 0) {
+                 if (document.getElementById('currentStudentName')) {
+                     document.getElementById('currentStudentName').textContent = '—';
+                 }
+                 return; // 无数据则返回
+             }
+             
+             // 确定要使用的行索引
+             let useRowIndex = rowIndex;
+             if (useRowIndex === undefined || useRowIndex === null) {
+                 useRowIndex = currentRowIndex;
+             }
+             
+             // 如果未传入 name，则使用指定的行索引获取姓名
+             if (!name) {
+                // 确保行索引有效
+                const maxRows = parsedSheets.total.rows.length;
+                if (useRowIndex < 0 || useRowIndex >= maxRows) useRowIndex = 0;
+                name = parsedSheets.total.rows[useRowIndex]?.[0] || '—';
+                
+                // 只有在主界面显示时才更新姓名 DOM
+                if (document.getElementById('currentStudentName')) {
+                    document.getElementById('currentStudentName').textContent = name;
+                }
+             } else {
+                // 如果传入了姓名，找到对应的行索引
+                if (useRowIndex === undefined || useRowIndex === null) {
+                    for (let i = 0; i < parsedSheets.total.rows.length; i++) {
+                        if (parsedSheets.total.rows[i][0] === name) {
+                            useRowIndex = i;
+                            break;
+                        }
+                    }
+                }
+                
+                // 更新DOM中的学生姓名显示
+                if (document.getElementById('currentStudentName')) {
+                    document.getElementById('currentStudentName').textContent = name;
+                }
+             }
+             
+             // 确保实例存在后再调用更新函数
+             if(instances.totalRankChartContainer) {
+                updateTotalRankChart(name, instances.totalRankChartContainer);
+             } else if (instances.total) { // 兼容全局实例名
+                 updateTotalRankChart(name, instances.total);
+             }
+
+
+             if(instances.radarChartContainer) {
+                 updateRadarChart(name, instances.radarChartContainer); 
+             } else if (instances.radar) { // 兼容全局实例名
+                 updateRadarChart(name, instances.radar);
+             }
+
+             // 传递实例集给更新函数
+             updateSubjectRankCharts(name, instances);
+             
+             // 仅在主界面更新时，更新导航按钮状态
+             if (!chartInstancesToUse) {
+                 const maxRows = parsedSheets.total.rows.length;
+                 // 只有在没有数据时才禁用按钮，否则允许循环浏览
+                 const hasData = maxRows > 0;
+                 document.getElementById('prevStudent').disabled = !hasData;
+                 document.getElementById('nextStudent').disabled = !hasData;
+             }
+        }
+        
+        // 更新总分排名图 - 增加实例参数，支持排名和分数模式
+        function updateTotalRankChart(name, chartInstance) {
+            const config = getChartConfig();
+            
+            if (!chartInstance) {
+                console.warn('[总分图表] 图表实例不存在');
+                return;
+            }
+            
+            // 获取图表容器 - 通过DOM遍历找到chart-box
+            const chartContainer = chartInstance.getDom();
+            let chartBox = chartContainer?.parentElement;
+            // 确保找到的是 chart-box (有id="totalRankChartBox")
+            if (chartBox && !chartBox.id) {
+                chartBox = chartBox.parentElement;
+            }
+            // 如果还是找不到,尝试通过容器ID直接查找
+            if (!chartBox || chartBox.id !== 'totalRankChartBox') {
+                // 在当前文档或父文档中查找
+                const doc = chartContainer?.ownerDocument || document;
+                chartBox = doc.getElementById('totalRankChartBox');
+                // 如果在主文档找不到,可能在克隆的DOM中,通过容器向上查找
+                if (!chartBox && chartContainer) {
+                    let parent = chartContainer.parentElement;
+                    while (parent && !parent.classList.contains('chart-box')) {
+                        parent = parent.parentElement;
+                    }
+                    chartBox = parent;
+                }
+            }
+            
+            // 根据显示模式选择数据源
+            const isRankingMode = displayMode === 'ranking';
+            const dataSource = isRankingMode ? parsedSheets.total : parsedSheets.totalScores;
+            const dataName = isRankingMode ? 'total' : 'totalScores';
+            
+            // 检查是否有数据
+            if (!dataSource || !dataSource.rows || dataSource.rows.length <= 0) {
+                console.log(`[${isRankingMode ? '总分排名图' : '总分分数图'}] ${dataName}无数据,隐藏图表`);
+                if (chartBox) chartBox.style.display = 'none';
+                chartInstance.clear();
+                return;
+            }
+            
+            // 图表始终显示（只要有数据）
+            console.log(`[${isRankingMode ? '总分排名图' : '总分分数图'}] ${dataName}有数据,显示图表 - 学生:`, name);
+            if (chartBox) {
+                chartBox.style.display = 'flex';
+                console.log(`[${isRankingMode ? '总分排名图' : '总分分数图'}] chartBox.id =`, chartBox.id, ', display =', chartBox.style.display);
+            } else {
+                console.warn(`[${isRankingMode ? '总分排名图' : '总分分数图'}] 警告: chartBox未找到!`);
+            }
+            
+            const data = findRowData(dataSource, name);
+
+            if (!data || !data.values || data.values.every(v => v === null) || data.values.length === 0) {
+                chartInstance.clear();
+                return;
+            }
+
+            const isScoreMode = displayMode === 'score';
+            const seriesName = isScoreMode ? '总分' : '总分排名';
+            const yAxisName = isScoreMode ? '分数' : '排名';
+            
+            const option = {
+                tooltip: { 
+                    trigger: 'axis', 
+                    textStyle: { fontSize: config.fontSize - 2 },
+                    // 过滤掉 null 值
+                    formatter: function (params) {
+                        const item = params[0];
+                        if (item.value === null) return `${item.name}<br/>${seriesName}: 暂无数据`;
+                        const displayValue = isScoreMode ? 
+                            (Number.isInteger(item.value) ? item.value : item.value.toFixed(1)) :
+                            (Number.isInteger(item.value) ? item.value : item.value.toFixed(2));
+                        return `${item.name}<br/>${seriesName}: ${displayValue}`;
+                    }
+                },
+                // 留白优化：加大边距给横轴标签更多空间
+                grid: { left: '12%', right: '8%', bottom: '20%', top: '12%', containLabel: true },
+                xAxis: {
+                    type: 'category',
+                    boundaryGap: true, // 设置为true使标签与刻度对齐
+                    data: data.labels,
+                    axisTick: {
+                        alignWithLabel: true // 确保刻度与标签对齐
+                    },
+                    axisLabel: {
+                        fontSize: config.fontSize - 2,
+                        rotate: 35, // 增加旋转角度避免重叠
+                        interval: 0, // 强制显示所有标签
+                        overflow: 'break', // 允许标签换行
+                        width: 60 // 限制标签宽度
+                    }
+                },
+                yAxis: { 
+                    type: 'value', 
+                    name: yAxisName, 
+                    inverse: isRankingMode ? false : false, // 排名模式：数值从小到大；分数模式：数值从小到大
+                    scale: true, 
+                    minInterval: isScoreMode ? null : 1, // 分数模式不强制整数间隔，排名模式确保最小间隔为1
+                    nameTextStyle: { align: 'right', fontSize: config.fontSize - 2 }, 
+                    axisLabel: { 
+                        fontSize: config.fontSize - 2,
+                        formatter: function (value) {
+                            if (isScoreMode) {
+                                // 分数模式：显示所有有效数值
+                                return value != null && !isNaN(value) ? value : '';
+                            } else {
+                                // 排名模式：只显示正整数
+                                return value > 0 && Number.isInteger(value) ? value : '';
+                            }
+                        }
+                    } 
+                },
+                series: [{
+                    name: seriesName, type: 'line', smooth: false,
+                    symbol: config.pointStyle, symbolSize: config.pointSize,
+                    lineStyle: { width: config.lineWidth }, color: config.lineColor,
+                    label: { 
+                        show: config.showLabels, 
+                        position: 'top', 
+                        fontSize: config.fontSize - 2,
+                        formatter: (params) => {
+                            if (params.value === null) return '';
+                            if (isScoreMode) {
+                                // 分数模式：显示分数，保留1位小数
+                                return Number.isInteger(params.value) ? params.value : params.value.toFixed(1);
+                            } else {
+                                // 排名模式：只显示整数排名
+                                return Number.isInteger(params.value) ? params.value : '';
+                            }
+                        }
+                    },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{
+                            offset: 0, color: config.lineColor + '80' 
+                        }, {
+                            offset: 1, color: config.lineColor + '00'
+                        }])
+                    },
+                    data: data.values
+                }]
+            };
+            
+            try {
+            chartInstance.setOption(option, true);
+            chartInstance.resize(); // 【修复点 2】强制重绘
+                console.log(`[${isRankingMode ? '总分排名图' : '总分分数图'}] 图表渲染完成 - 学生:`, name);
+            } catch (error) {
+                console.error(`[${isRankingMode ? '总分排名图' : '总分分数图'}] 图表渲染失败 - 学生:`, name, error);
+            }
+        }
+
+        // 更新雷达图 - 增加实例参数，支持排名和分数模式
+        function updateRadarChart(name, chartInstance) {
+            const config = getChartConfig();
+            // 根据显示模式选择数据源
+            const isRankingMode = displayMode === 'ranking';
+            const dataset = isRankingMode ? parsedSheets.radar : parsedSheets.radarScores;
+            
+            if (!chartInstance) return;
+            
+            // 获取图表容器 - 通过DOM遍历找到chart-box
+            const chartContainer = chartInstance.getDom();
+            let chartBox = chartContainer?.parentElement;
+            // 确保找到的是 chart-box (有id="radarChartBox")
+            if (chartBox && !chartBox.id) {
+                chartBox = chartBox.parentElement;
+            }
+            // 如果还是找不到,尝试通过容器ID直接查找
+            if (!chartBox || chartBox.id !== 'radarChartBox') {
+                // 在当前文档或父文档中查找
+                const doc = chartContainer?.ownerDocument || document;
+                chartBox = doc.getElementById('radarChartBox');
+                // 如果在主文档找不到,可能在克隆的DOM中,通过容器向上查找
+                if (!chartBox && chartContainer) {
+                    let parent = chartContainer.parentElement;
+                    while (parent && !parent.classList.contains('chart-box')) {
+                        parent = parent.parentElement;
+                    }
+                    chartBox = parent;
+                }
+            }
+            
+            // 检查数据是否存在
+            if (!dataset || !dataset.rows || dataset.rows.length <= 0 || !dataset.headers || dataset.headers.length < 2) {
+                console.log(`[${isRankingMode ? '雷达图' : '雷达分数图'}] ${isRankingMode ? 'radar' : 'radarScores'}无数据或表头不足,隐藏图表`);
+                if (chartBox) chartBox.style.display = 'none';
+                chartInstance.clear();
+                return;
+            }
+
+            // 查找当前学生在数据中的行
+            const row = findRowByName(dataset, name);
+            
+            // 如果当前学生没有数据行，隐藏雷达图
+            if (!row) {
+                console.log(`[${isRankingMode ? '雷达图' : '雷达分数图'}] 学生`, name, `在${isRankingMode ? 'radar' : 'radarScores'}中无数据行,隐藏图表`);
+                if (chartBox) chartBox.style.display = 'none';
+                chartInstance.clear();
+                return;
+            }
+
+            // 规则：第1列为姓名，第2列起为各学科数据
+            const headers = dataset.headers.slice(1);
+            const values = row.slice(1);
+
+            const indicatorData = []; // 雷达图的坐标轴指标
+            const seriesData = []; // 雷达图的数据
+            
+            // --- 仅基于当前行数据自适应缩放 ---
+            let currentValues = [];
+            values.forEach(val => {
+                const value = parseFloat(val);
+                if (!isNaN(value) && (isRankingMode ? value > 0 : value >= 0)) {
+                    currentValues.push(value);
+                }
+            });
+
+            // 如果当前学生的数据行中没有有效数据，隐藏雷达图
+            if (currentValues.length === 0) {
+                console.log(`[${isRankingMode ? '雷达图' : '雷达分数图'}] 学生`, name, '的数据行无有效数据,隐藏图表');
+                if (chartBox) chartBox.style.display = 'none';
+                chartInstance.clear();
+                return;
+            }
+            
+            // 当前学生有有效数据，显示雷达图
+            console.log(`[${isRankingMode ? '雷达图' : '雷达分数图'}] 学生`, name, '有有效数据,显示图表');
+            if (chartBox) {
+                chartBox.style.display = 'flex';
+                console.log(`[${isRankingMode ? '雷达图' : '雷达分数图'}] chartBox.id =`, chartBox.id, ', display =', chartBox.style.display);
+            } else {
+                console.warn(`[${isRankingMode ? '雷达图' : '雷达分数图'}] 警告: chartBox未找到!`);
+            }
+            
+            let finalMaxValue;
+            if (isRankingMode) {
+                // 排名模式：排名数值越小越好，向上取整到10的倍数，并增加20%的缓冲空间
+                const dataMax = Math.max(...currentValues); 
+                finalMaxValue = Math.ceil(dataMax * 1.2 / 10) * 10;
+                finalMaxValue = Math.max(finalMaxValue, 10);
+            } else {
+                // 分数模式：分数数值越大越好，向上取整到10的倍数，并增加10%的缓冲空间
+                const dataMax = Math.max(...currentValues);
+                finalMaxValue = Math.ceil(dataMax * 1.1 / 10) * 10;
+                finalMaxValue = Math.max(finalMaxValue, 100); // 至少100分
+            }
+            // --- 适应缩放结束 ---
+
+
+            headers.forEach((label, i) => {
+                let value = parseFloat(values[i]);
+                // 如果是无效值，替换为合适的默认值，确保雷达图绘制
+                if (isNaN(value) || value === null) {
+                    if (isRankingMode) {
+                        // 排名模式：使用最大值，表示排名非常靠后
+                        value = finalMaxValue; 
+                    } else {
+                        // 分数模式：使用0，表示无分数
+                        value = 0;
+                    }
+                }
+
+                if (label) {
+                    let cleanLabel = label.replace(/排名|分数|成绩|考试/g, '').trim();
+                    
+                    indicatorData.push({ 
+                        name: cleanLabel, 
+                        max: finalMaxValue, 
+                        color: '#666'
+                    });
+                    
+                    seriesData.push(value);
+                }
+            });
+
+
+            const option = {
+                tooltip: { 
+                    trigger: 'item', 
+                    textStyle: { fontSize: config.fontSize - 2 },
+                    formatter: function(params) {
+                        if (!Array.isArray(params.value) || !indicatorData || params.value.length !== indicatorData.length) {
+                            return params.name || '数据点'; // Fallback
+                        }
+
+                        const dataType = isRankingMode ? '排名' : '分数';
+                        let content = `<b>${params.name} 本次${dataType}</b><br/>`;
+                        
+                        params.value.forEach((value, i) => {
+                            const indicator = indicatorData[i];
+                            if (!indicator) return;
+
+                            let displayValue = value;
+                            const numValue = parseFloat(value);
+
+                            if (isRankingMode) {
+                                // 排名模式
+                                if (!isNaN(numValue) && numValue > 0 && numValue < finalMaxValue) {
+                                     displayValue = Number.isInteger(numValue) ? numValue : numValue.toFixed(2);
+                                } else {
+                                     displayValue = '无数据/缺失';
+                                }
+                            } else {
+                                // 分数模式
+                                if (!isNaN(numValue) && numValue >= 0 && numValue <= finalMaxValue) {
+                                     displayValue = Number.isInteger(numValue) ? numValue : numValue.toFixed(1);
+                                } else {
+                                     displayValue = '无数据/缺失';
+                                }
+                            }
+                            content += `<span style="display:inline-block;margin-right:4px;border-radius:10px;width:10px;height:10px;background-color:${params.color};"></span>${indicator.name}: ${displayValue}<br/>`;
+                        });
+                        return content;
+                    }
+                },
+                legend: { show: false },
+                radar: {
+                    indicator: indicatorData,
+                    center: ['50%', '45%'], // 调整中心位置以适应标题
+                    radius: '65%',
+                    startAngle:90, // 从顶部开始
+                    splitNumber: 4, // 设置刻度间隔数
+                    axisName: {
+                        color: '#333',
+                        fontSize: config.fontSize - 1,
+                        formatter: function (value, indicator) {
+                            let displayText = value.length > 4 ? value.substring(0, 4) + '...' : value; 
+                            
+                            // 仅对第一个指标的名称添加刻度信息
+                            if (indicator && indicatorData.length > 0 && indicator.name === indicatorData[0].name) {
+                                const rangeText = isRankingMode ? 
+                                    `(径向刻度范围: 0-${indicator.max})` : 
+                                    `(径向刻度范围: 0-${indicator.max})`;
+                                return displayText + rangeText;
+                            }
+                            
+                            return displayText;
+                        }
+                    },
+                    splitLine: { lineStyle: { color: '#ccc' } },
+                    splitArea: {
+                        show: true,
+                        areaStyle: {
+                            color: [
+                                'rgba(238, 197, 102, 0.1)',
+                                'rgba(121, 143, 150, 0.1)',
+                                'rgba(165, 182, 218, 0.1)',
+                                'rgba(200, 200, 200, 0.1)'
+                            ].reverse() // 从内到外不同颜色
+                        }
+                    },
+                    axisLine: { show: true } /* 隐藏最外侧框线 */
+                },
+                series: [{
+                    name: name + (isRankingMode ? ' 各科排名' : ' 各科分数'),
+                    type: 'radar',
+                    symbol: config.pointStyle, 
+                    symbolSize: config.pointSize,
+                    itemStyle: {
+                        color: config.lineColor
+                    },
+                    lineStyle: {
+                        width: config.lineWidth,
+                        color: config.lineColor
+                    },
+                    areaStyle: {
+                        opacity: 0.6,
+                        color: config.lineColor + 'AA'
+                    },
+                    label: { 
+                        show: false, // 禁用数据点数值
+                    },
+                    data: [{
+                        value: seriesData,
+                        name: name
+                    }]
+                }]
+            };
+            
+            try {
+            chartInstance.setOption(option, true);
+            chartInstance.resize(); // 【修复点 2】强制重绘
+                console.log('[雷达图] 图表渲染完成 - 学生:', name);
+            } catch (error) {
+                console.error('[雷达图] 图表渲染失败 - 学生:', name, error);
+            }
+        }
+        
+        // 更新各科目排名图 - 增加实例集参数，支持排名和分数模式
+        function updateSubjectRankCharts(name, chartInstancesToUse) {
+            const config = getChartConfig();
+            const isRankingMode = displayMode === 'ranking';
+            
+
+            // ====== 【新增修改 1 开始】判断全局数据中是否有化学成绩 ======
+            let hasGlobalChemistryData = false;
+            const checkGlobalData = (dataset) => {
+                if (!dataset || !dataset.rows) return false;
+                return dataset.rows.some(row => row.slice(1).some(v => v !== null && v !== ''));
+            };
+            
+            if (parsedSheets.subjects && parsedSheets.subjects.chemistry) {
+                hasGlobalChemistryData = checkGlobalData(parsedSheets.subjects.chemistry);
+            }
+            if (!hasGlobalChemistryData && parsedSheets.subjectScores && parsedSheets.subjectScores.chemistry) {
+                hasGlobalChemistryData = checkGlobalData(parsedSheets.subjectScores.chemistry);
+            }
+            // ====== 【新增修改 1 结束】 ======
+
+            subjects.forEach(subject => {
+                const chartId = `${subject.id}RankChart`;
+                // 【注意】使用传入的实例集
+                const chartInstance = chartInstancesToUse[subject.id] || chartInstancesToUse[chartId]; 
+                
+                const chartBox = document.getElementById(`chartBox-${subject.id}`);
+                
+                if (!chartInstance || !chartBox) return;
+                chartInstance.clear();
+                let seriesData = [];
+                let allLabels = new Set();
+                let hasValidData = false; // 用于判断是否有有效数据点（非null）
+
+                // --- 1. 提取系列数据 ---
+                // 从排名和分数两个数据源收集所有标签，确保不同模式共用同一套考试名称
+                const rankSubjectsData = parsedSheets.subjects;
+                const scoreSubjectsData = parsedSheets.subjectScores;
+
+                if (subject.id === 'english') {
+                    // 特殊处理英语和英语听说
+                    const subjectsData = isRankingMode ? rankSubjectsData : scoreSubjectsData;
+                    const dataEn = findRowData(subjectsData.english || {}, name);
+                    const dataEnLs = findRowData(subjectsData.englishListening || {}, name);
+                    const subColors = [config.lineColor, '#91cc75']; // 主题色和副色
+
+                    // 从两种模式收集所有标签
+                    // 收集标签时的安全保护
+                    const dataSources = [
+                        findRowData(rankSubjectsData.english || {}, name),
+                        findRowData(rankSubjectsData.englishListening || {}, name),
+                        findRowData(scoreSubjectsData.english || {}, name),
+                        findRowData(scoreSubjectsData.englishListening || {}, name)
+                    ];
+
+                    dataSources.forEach(data => {
+                        if (data && data.labels) {
+                            data.labels.forEach(l => allLabels.add(l));
+                        }
+                    });
+
+                    if (dataEn && dataEn.values.length > 0) {
+                        seriesData.push({
+                            name: '英语',
+                            data: dataEn,
+                            lineStyle: { type: 'solid' },
+                            symbolType: config.pointStyle,
+                            color: subColors[0]
+                        });
+                        if (dataEn.values.some(v => v !== null)) hasValidData = true;
+                    }
+                    if (dataEnLs && dataEnLs.values.length > 0) {
+                        seriesData.push({
+                            name: '听说',
+                            data: dataEnLs,
+                            lineStyle: { type: 'dashed' },
+                            symbolType: 'triangle', // 固定为三角形
+                            color: subColors[1]
+                        });
+                         if (dataEnLs.values.some(v => v !== null)) hasValidData = true;
+                    }
+                } else if (subject.id === 'bioGeo') {
+                    // 特殊处理生物和地理
+                    const subjectsData = isRankingMode ? rankSubjectsData : scoreSubjectsData;
+                    const dataBio = findRowData(subjectsData.biology, name);
+                    const dataGeo = findRowData(subjectsData.geography, name);
+                    const subColors = [config.lineColor, '#fac858']; // 主题色和黄色
+
+                    // 从两种模式收集所有标签
+                    const rankDataBio = findRowData(rankSubjectsData.biology, name);
+                    const rankDataGeo = findRowData(rankSubjectsData.geography, name);
+                    const scoreDataBio = findRowData(scoreSubjectsData.biology, name);
+                    const scoreDataGeo = findRowData(scoreSubjectsData.geography, name);
+
+                    [rankDataBio, rankDataGeo, scoreDataBio, scoreDataGeo].forEach(data => {
+                        if (data && data.labels) {
+                            data.labels.forEach(l => allLabels.add(l));
+                        }
+                    });
+
+                    if (dataBio && dataBio.values.length > 0) {
+                        seriesData.push({
+                            name: '生物',
+                            data: dataBio,
+                            lineStyle: { type: 'solid' },
+                            symbolType: config.pointStyle,
+                            color: subColors[0]
+                        });
+                        if (dataBio.values.some(v => v !== null)) hasValidData = true;
+                    }
+                    if (dataGeo && dataGeo.values.length > 0) {
+                        seriesData.push({
+                            name: '地理',
+                            data: dataGeo,
+                            lineStyle: { type: 'dashed' },
+                            symbolType: 'diamond', // 固定为菱形
+                            color: subColors[1]
+                        });
+                         if (dataGeo.values.some(v => v !== null)) hasValidData = true;
+                    }
+                } else {
+                    // 其他科目
+                    const subjectsData = isRankingMode ? rankSubjectsData : scoreSubjectsData;
+                    const dataset = subjectsData[subject.id];
+
+                    // 从两种模式收集所有标签
+                    const rankDataset = rankSubjectsData[subject.id];
+                    const scoreDataset = scoreSubjectsData[subject.id];
+
+                    [rankDataset, scoreDataset].forEach(ds => {
+                        if (ds && ds.rows) {
+                            const data = findRowData(ds, name);
+                            if (data && data.labels) {
+                                data.labels.forEach(l => allLabels.add(l));
+                            }
+                        }
+                    });
+
+                    if (dataset && dataset.rows && dataset.rows.length > 0) {
+                        const data = findRowData(dataset, name);
+                        if (data && data.values.length > 0) {
+                            seriesData.push({ name: subject.name, data: data });
+                            if (data.values.some(v => v !== null)) hasValidData = true;
+                        }
+                    }
+                }
+
+// ====== 【新增修改 2 开始】如果当前是生物/地理，且全局有化学，强制隐藏 ======
+                    if (subject.id === 'bioGeo' && hasGlobalChemistryData) {
+                        hasValidData = false;
+                    }
+// ====== 【新增修改 2 结束】 ======
+
+// --- 2. 根据是否有有效数据决定显示/隐藏 ---
+if (hasValidData) {
+                
+                
+                }
+
+
+                
+
+                // --- 2. 根据是否有有效数据决定显示/隐藏 ---
+                if (hasValidData) {
+                    // 只有在 chartBox 存在于当前 DOM 中才操作 display 属性
+                    if (chartBox) chartBox.style.display = 'flex'; 
+                    
+                    const finalLabels = Array.from(allLabels).sort();
+                    
+                    const finalSeries = seriesData.map((s) => {
+                        const dataMap = new Map(s.data.labels.map((l, i) => [l, s.data.values[i]]));
+                        
+                        return {
+                            name: s.name, type: 'line', smooth: false,
+                            symbol: s.symbolType || config.pointStyle, 
+                            symbolSize: config.pointSize,
+                            lineStyle: { ...s.lineStyle, width: config.lineWidth },
+                            color: s.color || config.lineColor,
+                            label: { 
+                                show: config.showLabels, 
+                                position: 'top', 
+                                fontSize: config.fontSize - 4,
+                                formatter: (params) => {
+                                    if (params.value === null) return '';
+                                    if (isRankingMode) {
+                                        // 排名模式：只显示整数
+                                        return Number.isInteger(params.value) ? params.value : '';
+                                    } else {
+                                        // 分数模式：显示分数，保留1位小数
+                                        return Number.isInteger(params.value) ? params.value : params.value.toFixed(1);
+                                    }
+                                }
+                            },
+                            data: finalLabels.map(l => dataMap.get(l) || null) // 确保数据点对应标签
+                        };
+                    });
+
+                    const yAxisName = isRankingMode ? '排名' : '分数';
+                    const option = {
+                        tooltip: { 
+                            trigger: 'axis', 
+                            textStyle: { fontSize: config.fontSize - 2 },
+                            formatter: function (params) {
+                                // 处理 null 值显示
+                                let content = `${params[0].name}<br/>`;
+                                params.forEach(item => {
+                                    const value = item.value;
+                                    let displayValue;
+                                    if (value === null) {
+                                        displayValue = '暂无数据';
+                                    } else if (isRankingMode) {
+                                        displayValue = Number.isInteger(value) ? value : value.toFixed(2);
+                                    } else {
+                                        displayValue = Number.isInteger(value) ? value : value.toFixed(1);
+                                    }
+                                    content += `${item.marker} ${item.seriesName}: ${displayValue}<br/>`;
+                                });
+                                return content;
+                            }
+                        },
+                        // 留白优化：加大边距给横轴标签更多空间
+                        grid: { left: '12%', right: '8%', top: '16%', bottom: '28%' },
+                        legend: {
+                            show: (subject.id === 'english' || subject.id === 'bioGeo') && finalSeries.length > 1,
+                            top: '0%',           // 与y轴名称（排名/分数）同一高度
+                            right: '8%',          // 由上方显示
+                            orient: 'horizontal', // 水平排列
+                            textStyle: { fontSize: config.fontSize - 4 },
+                            itemGap: 10
+                        },
+                        xAxis: {
+                            type: 'category',
+                            boundaryGap: true, // 设置为true使标签与刻度对齐
+                            data: finalLabels,
+                            axisTick: {
+                                alignWithLabel: true // 确保刻度与标签对齐
+                            },
+                            axisLabel: {
+                                interval: 0, // 强制显示所有标签
+                                rotate: 35, // 增加旋转角度避免重叠
+                                fontSize: config.fontSize - 4,
+                                overflow: 'break', // 允许标签换行
+                                width: 50 // 限制标签宽度
+                            }
+                        },
+                        yAxis: { 
+                            type: 'value', 
+                            inverse: isRankingMode ? false : false, // 排名模式：数值从小到大；分数模式：数值从小到大
+                            name: yAxisName, 
+                            scale: true, 
+                            minInterval: isRankingMode ? 1 : null, // 排名模式确保最小间隔为1，分数模式不强制
+                            nameTextStyle: { align: 'right', fontSize: config.fontSize - 2 }, 
+                            axisLabel: { 
+                                fontSize: config.fontSize - 2,
+                                formatter: function (value) {
+                                    if (isRankingMode) {
+                                        // 排名模式：只显示正整数
+                                        return value > 0 && Number.isInteger(value) ? value : '';
+                                    } else {
+                                        // 分数模式：显示所有有效数值
+                                        return value != null && !isNaN(value) ? value : '';
+                                    }
+                                }
+                            }
+                        },
+                        series: finalSeries
+                    };
+                    try {
+                        // 先清理图表状态，解决鼠标经过后切换姓名数据不更新的问题
+                        chartInstance.clear();
+                        chartInstance.setOption(option, true);
+                        chartInstance.resize();
+                        console.log(`[${subject.name}图表] 图表渲染完成 - 学生:`, name);
+                    } catch (error) {
+                        console.error(`[${subject.name}图表] 图表渲染失败 - 学生:`, name, error);
+                    }
+
+                } else {
+                    // 隐藏图表容器
+                    if (chartBox) chartBox.style.display = 'none';
+                    // 清空图表
+                    chartInstance.clear(); 
+                }
+            });
+        }
+        
+
+
+        
+
+
+
+        
+        // --- 原始成绩导入：列识别、排名计算、多考试合并 ---
+        const RAW_NAME_HEADERS = ['姓名', '名字', '学生姓名', '考生姓名', '学生'];
+        const RAW_TOTAL_HEADERS = ['总分', '合计', '总成绩', '总分成绩', '卷面总分', '英语总分'];
+        /** 除英语外各科关键字（英语笔试/听说在 mapRawHeader 中单独处理） */
+        const RAW_OTHER_SUBJECT_RULES = [
+            { keys: ['语文'], id: 'chinese', radar: '语文' },
+            { keys: ['数学'], id: 'math', radar: '数学' },
+            { keys: ['物理'], id: 'physics', radar: '物理' },
+            { keys: ['历史'], id: 'history', radar: '历史' },
+            { keys: ['道德与法治', '道法', '道德', '法治'], id: 'daofa', radar: '道法' },
+            { keys: ['化学'], id: 'chemistry', radar: '化学' },
+            { keys: ['生物'], id: 'biology', radar: '生物' },
+            { keys: ['地理'], id: 'geography', radar: '地理' }
+        ];
+        const RAW_SUBJECT_IDS = ['chinese', 'math', 'english', 'englishListening', 'physics', 'history', 'daofa', 'chemistry', 'biology', 'geography'];
+        const RADAR_SUBJECT_ORDER = [
+            { id: 'chinese', label: '语文' }, { id: 'math', label: '数学' },
+            { id: 'english', label: '英语' }, { id: 'englishListening', label: '英语听说' },
+            { id: 'physics', label: '物理' }, { id: 'history', label: '历史' },
+            { id: 'daofa', label: '道法' }, { id: 'chemistry', label: '化学' },
+            { id: 'biology', label: '生物' }, { id: 'geography', label: '地理' }
+        ];
+
+        function normalizeNameKey(name) {
+            return String(name || '').replace(/\s+/g, '').trim();
+        }
+
+        function examLabelFromFileName(fileName) {
+            const base = String(fileName || '').replace(/\.(xlsx|xls|csv)$/i, '').trim();
+            return base || '考试';
+        }
+
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = ev => resolve(ev.target.result);
+                reader.onerror = () => reject(new Error('读取文件失败'));
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function parseScoreCell(v) {
+            if (v === null || v === undefined || v === '') return null;
+            if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+            const s = String(v).trim();
+            const cleaned = s.replace(/[^\d.-]/g, '');
+            if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
+            const x = parseFloat(cleaned);
+            return Number.isFinite(x) ? x : null;
+        }
+
+        /** 合并表头用：去空白，便于「语文」+「分数」→「语文分数」 */
+        function normalizeMergedHeaderText(header) {
+            return String(header == null ? '' : header).replace(/\s/g, '');
+        }
+
+        /**
+         * 列语义：姓名 / 总分 / 各科。
+         * 英语：笔试(english) 与 听说(englishListening) 分属两列；综合「英语」列归为 english。
+         * 合并后字符串如「英语」「笔试」「分数」→「英语笔试分数」。
+         */
+        function mapRawHeader(header) {
+            const h = normalizeMergedHeaderText(header);
+            if (!h) return null;
+
+            for (const nh of RAW_NAME_HEADERS) {
+                if (h === nh || h.includes(nh)) return { type: 'name' };
+            }
+            for (const th of RAW_TOTAL_HEADERS) {
+                if (h.includes(th)) return { type: 'total' };
+            }
+
+            // —— 英语听说（必须先于「英语」广义匹配）——
+            if (h.includes('英语听说') || h.includes('外语听说')) {
+                return { type: 'subject', id: 'englishListening', radar: '英语听说' };
+            }
+            if ((h.includes('英语') || h.includes('外语')) && h.includes('听说')) {
+                return { type: 'subject', id: 'englishListening', radar: '英语听说' };
+            }
+            if (h.includes('听说') && !h.includes('笔试')) {
+                const nonEn = ['语文', '数学', '物理', '化学', '历史', '地理', '生物', '道法', '道德', '政治', '体育', '音乐', '美术', '科学'];
+                if (!nonEn.some(k => h.includes(k))) {
+                    return { type: 'subject', id: 'englishListening', radar: '英语听说' };
+                }
+            }
+
+            // —— 英语笔试 ——
+            if (h.includes('英语笔试')) {
+                return { type: 'subject', id: 'english', radar: '英语' };
+            }
+            if ((h.includes('英语') || h.includes('外语')) && (h.includes('笔试') || h.includes('卷面') || h.includes('试卷'))) {
+                return { type: 'subject', id: 'english', radar: '英语' };
+            }
+            if (h.includes('笔试') && (h.includes('英语') || h.includes('外语'))) {
+                return { type: 'subject', id: 'english', radar: '英语' };
+            }
+
+            // —— 其他学科 ——
+            for (const rule of RAW_OTHER_SUBJECT_RULES) {
+                for (const key of rule.keys) {
+                    if (h.includes(key)) return { type: 'subject', id: rule.id, radar: rule.radar };
+                }
+            }
+
+            // —— 英语综合分列（仅「英语」「外语」且未判为听说/笔试）——
+            if (h.includes('英语') || h.includes('外语')) {
+                return { type: 'subject', id: 'english', radar: '英语' };
+            }
+
+            return null;
+        }
+
+        function sheetColCount(aoa) {
+            let m = 0;
+            for (let i = 0; i < aoa.length; i++) {
+                const row = aoa[i];
+                if (row && row.length > m) m = row.length;
+            }
+            return m;
+        }
+
+        /** 将 offset 起的 headerRows 行在列 col 上拼接为合并表头 */
+        function buildMergedHeaders(aoa, offset, headerRows, colCount) {
+            const merged = [];
+            for (let c = 0; c < colCount; c++) {
+                const parts = [];
+                for (let r = 0; r < headerRows; r++) {
+                    const row = aoa[offset + r];
+                    const cell = row && row[c];
+                    if (cell !== null && cell !== undefined && String(cell).trim() !== '') {
+                        parts.push(String(cell).trim());
+                    }
+                }
+                merged[c] = parts.join('');
+            }
+            return merged;
+        }
+
+        /**
+         * 在前若干行内搜索：表头行数 1～3、起始偏移 0～8，合并列标题后须唯一识别「姓名」列。
+         */
+        function detectTableLayout(aoa) {
+            if (!aoa || aoa.length < 2) {
+                throw new Error('表格数据不足');
+            }
+            const colCount = sheetColCount(aoa);
+            const maxOffset = Math.min(8, Math.max(0, aoa.length - 2));
+            let bestScore = -Infinity;
+            let best = null;
+
+            for (let offset = 0; offset <= maxOffset; offset++) {
+                for (let headerRows = 1; headerRows <= 3; headerRows++) {
+                    if (offset + headerRows > aoa.length) break;
+                    const merged = buildMergedHeaders(aoa, offset, headerRows, colCount);
+                    const nameCols = [];
+                    for (let c = 0; c < merged.length; c++) {
+                        const m = mapRawHeader(merged[c]);
+                        if (m && m.type === 'name') nameCols.push(c);
+                    }
+                    if (nameCols.length !== 1) continue;
+                    const nameCol = nameCols[0];
+                    let score = 0;
+                    for (let c = 0; c < merged.length; c++) {
+                        const m = mapRawHeader(merged[c]);
+                        if (m && (m.type === 'subject' || m.type === 'total')) score += 3;
+                    }
+                    const dataStart = offset + headerRows;
+                    let nameHits = 0;
+                    let numHits = 0;
+                    for (let r = dataStart; r < Math.min(dataStart + 20, aoa.length); r++) {
+                        const row = aoa[r];
+                        const nm = row && row[nameCol];
+                        if (nm != null && String(nm).trim() !== '') nameHits++;
+                        if (!row) continue;
+                        for (let c = 0; c < merged.length; c++) {
+                            if (c === nameCol) continue;
+                            if (parseScoreCell(row[c]) != null) numHits++;
+                        }
+                    }
+                    score += nameHits * 2 + Math.min(numHits, 40);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = { offset, headerRows, merged, nameCol, dataStart };
+                    }
+                }
+            }
+
+            if (!best) {
+                throw new Error('未能自动定位表头（需能合并出唯一「姓名」列；表头可为 1～3 行，且位于数据区上方前若干行）');
+            }
+            return { ...best, colCount };
+        }
+
+        function parseRawWorkbook(workbook, examLabel) {
+            if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                throw new Error('工作簿中没有工作表');
+            }
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+            if (!aoa || aoa.length < 2) {
+                throw new Error(`表「${sheetName}」数据不足（至少需要表头+一行数据）`);
+            }
+
+            const layout = detectTableLayout(aoa);
+            const merged = layout.merged;
+            const nameCol = layout.nameCol;
+            const dataStart = layout.dataStart;
+
+            const colMeta = [];
+            const usedSubjectIds = new Set();
+            for (let i = 0; i < merged.length; i++) {
+                if (i === nameCol) continue;
+                const m = mapRawHeader(merged[i]);
+                if (!m || m.type === 'name') continue;
+                if (m.type === 'total') {
+                    colMeta[i] = { kind: 'total' };
+                    continue;
+                }
+                if (m.type === 'subject' && !usedSubjectIds.has(m.id)) {
+                    usedSubjectIds.add(m.id);
+                    colMeta[i] = { kind: 'subject', id: m.id, radar: m.radar };
+                }
+            }
+
+            const students = [];
+            const studentKeyOrder = [];
+            const seenKeys = new Set();
+            for (let r = dataStart; r < aoa.length; r++) {
+                const row = aoa[r];
+                if (!row || !row.some(cell => cell !== null && cell !== '')) continue;
+                const rawName = row[nameCol];
+                const name = rawName == null ? '' : String(rawName).trim();
+                if (!name) continue;
+                const nk = normalizeNameKey(name);
+                const scores = {};
+                let total = null;
+                for (let c = 0; c < merged.length; c++) {
+                    const meta = colMeta[c];
+                    if (!meta) continue;
+                    const v = parseScoreCell(row[c]);
+                    if (meta.kind === 'total') total = v;
+                    else if (meta.kind === 'subject') scores[meta.id] = v;
+                }
+                if (total == null) {
+                    const parts = RAW_SUBJECT_IDS.map(id => scores[id]).filter(v => v != null && !isNaN(v));
+                    if (parts.length) total = parts.reduce((a, b) => a + b, 0);
+                }
+                const idx = students.findIndex(s => normalizeNameKey(s.name) === nk);
+                const rec = { name, total, scores };
+                if (idx >= 0) students[idx] = rec;
+                else students.push(rec);
+                if (!seenKeys.has(nk)) {
+                    seenKeys.add(nk);
+                    studentKeyOrder.push(nk);
+                }
+            }
+            if (!students.length) throw new Error('未解析到任何学生行（请检查姓名列与数据起始行）');
+            return { examLabel, students, studentKeyOrder };
+        }
+
+        function competitionRankByKey(entries) {
+            const list = entries.filter(e => e.value != null && !isNaN(e.value));
+            list.sort((a, b) => b.value - a.value);
+            const map = new Map();
+            for (let i = 0; i < list.length; i++) {
+                const k = list[i].key;
+                if (i > 0 && list[i].value === list[i - 1].value) {
+                    map.set(k, map.get(list[i - 1].key));
+                } else {
+                    map.set(k, i + 1);
+                }
+            }
+            return map;
+        }
+
+        function computeRanksForSnapshot(snap) {
+            const totalEntries = snap.students.map(s => ({
+                key: normalizeNameKey(s.name),
+                value: s.total
+            }));
+            const totalRanks = competitionRankByKey(totalEntries);
+            const subjectRanks = {};
+            for (const id of RAW_SUBJECT_IDS) {
+                const entries = snap.students.map(s => ({
+                    key: normalizeNameKey(s.name),
+                    value: s.scores[id]
+                }));
+                subjectRanks[id] = competitionRankByKey(entries);
+            }
+            return { total: totalRanks, subjects: subjectRanks };
+        }
+
+        function uniquifyExamLabels(labels) {
+            const count = {};
+            return labels.map(l => {
+                const base = l || '考试';
+                count[base] = (count[base] || 0) + 1;
+                return count[base] > 1 ? `${base}_${count[base]}` : base;
+            });
+        }
+
+        function buildParsedSheetsFromRawExams(workbooksAndLabels) {
+            const snapshots = [];
+            const rankPerExam = [];
+            const scorePerExam = [];
+            for (const { workbook, label } of workbooksAndLabels) {
+                const snap = parseRawWorkbook(workbook, label);
+                snapshots.push(snap);
+                rankPerExam.push(computeRanksForSnapshot(snap));
+                // 保存原始分数数据
+                scorePerExam.push({
+                    total: snap.students.map(s => ({ key: normalizeNameKey(s.name), value: s.total })),
+                    subjects: RAW_SUBJECT_IDS.map(id => ({
+                        id,
+                        scores: snap.students.map(s => ({ key: normalizeNameKey(s.name), value: s.scores[id] }))
+                    }))
+                });
+            }
+            const examLabels = uniquifyExamLabels(snapshots.map(s => s.examLabel));
+
+            const keyToDisplay = new Map();
+            const keyOrder = [];
+            for (const snap of snapshots) {
+                for (const k of snap.studentKeyOrder) {
+                    if (!keyToDisplay.has(k)) {
+                        const st = snap.students.find(s => normalizeNameKey(s.name) === k);
+                        keyToDisplay.set(k, st ? String(st.name).trim() : k);
+                        keyOrder.push(k);
+                    }
+                }
+            }
+            for (const snap of snapshots) {
+                for (const s of snap.students) {
+                    const k = normalizeNameKey(s.name);
+                    if (!keyToDisplay.has(k)) {
+                        keyToDisplay.set(k, String(s.name).trim());
+                        keyOrder.push(k);
+                    }
+                }
+            }
+
+            const totalRows = keyOrder.map(k => {
+                const row = [keyToDisplay.get(k)];
+                for (let ei = 0; ei < rankPerExam.length; ei++) {
+                    const r = rankPerExam[ei].total.get(k);
+                    row.push(r != null ? r : '');
+                }
+                return row;
+            });
+
+            // 保存总分分数数据
+            const totalScoreRows = keyOrder.map(k => {
+                const row = [keyToDisplay.get(k)];
+                for (let ei = 0; ei < scorePerExam.length; ei++) {
+                    const scoreEntry = scorePerExam[ei].total.find(s => s.key === k);
+                    const score = scoreEntry ? scoreEntry.value : null;
+                    row.push(score != null ? score : '');
+                }
+                return row;
+            });
+
+            const lastIdx = snapshots.length - 1;
+            const lastSubj = rankPerExam[lastIdx].subjects;
+            const radarCols = RADAR_SUBJECT_ORDER.filter(({ id }) => {
+                const m = lastSubj[id];
+                return m && m.size > 0;
+            });
+            const radarHeaders = ['姓名', ...radarCols.map(c => c.label)];
+            const radarRows = keyOrder.map(k => {
+                const row = [keyToDisplay.get(k)];
+                radarCols.forEach(({ id }) => {
+                    const v = lastSubj[id].get(k);
+                    row.push(v != null ? v : '');
+                });
+                return row;
+            });
+
+            // 保存雷达图分数数据
+            const radarScoreRows = keyOrder.map(k => {
+                const row = [keyToDisplay.get(k)];
+                radarCols.forEach(({ id }) => {
+                    const lastSnap = snapshots[lastIdx];
+                    const student = lastSnap.students.find(s => normalizeNameKey(s.name) === k);
+                    const score = student ? student.scores[id] : null;
+                    row.push(score != null ? score : '');
+                });
+                return row;
+            });
+
+            const subjects = {};
+            const subjectScores = {};
+            for (const id of RAW_SUBJECT_IDS) {
+                const rows = keyOrder.map(k => {
+                    const row = [keyToDisplay.get(k)];
+                    for (let ei = 0; ei < rankPerExam.length; ei++) {
+                        const m = rankPerExam[ei].subjects[id];
+                        const v = m ? m.get(k) : null;
+                        row.push(v != null ? v : '');
+                    }
+                    return row;
+                });
+                subjects[id] = { headers: ['姓名', ...examLabels], rows };
+
+                // 保存科目分数数据
+                const scoreRows = keyOrder.map(k => {
+                    const row = [keyToDisplay.get(k)];
+                    for (let ei = 0; ei < scorePerExam.length; ei++) {
+                        const subjectScore = scorePerExam[ei].subjects.find(s => s.id === id);
+                        const scoreEntry = subjectScore ? subjectScore.scores.find(s => s.key === k) : null;
+                        const score = scoreEntry ? scoreEntry.value : null;
+                        row.push(score != null ? score : '');
+                    }
+                    return row;
+                });
+                subjectScores[id] = { headers: ['姓名', ...examLabels], rows: scoreRows };
+            }
+
+            return {
+                total: { headers: ['姓名', ...examLabels], rows: totalRows },
+                totalScores: { headers: ['姓名', ...examLabels], rows: totalScoreRows },
+                radar: { headers: radarHeaders, rows: radarRows },
+                radarScores: { headers: radarHeaders, rows: radarScoreRows },
+                subjects,
+                subjectScores
+            };
+        }
+
+        function applyLoadedData() {
+            currentRowIndex = 0;
+            initCharts();
+            updateStudentDisplay();
+            setTimeout(() => {
+                Object.values(echartsInstances).forEach(chart => {
+                    if (chart && !chart.isDisposed()) chart.resize();
+                });
+            }, 100);
+            document.getElementById('exportExcel').disabled = false;
+            document.getElementById('printSinglePdfButton').disabled = false;
+            document.getElementById('printAllPdfButton').disabled = false;
+        }
+
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s == null ? '' : String(s);
+            return d.innerHTML;
+        }
+
+        function addFilesToQueue(fileList) {
+            for (const f of Array.from(fileList || [])) {
+                if (!/\.(xlsx|xls)$/i.test(f.name)) continue;
+                fileQueueIdSeq += 1;
+                queuedFileItems.push({
+                    id: fileQueueIdSeq,
+                    file: f,
+                    label: examLabelFromFileName(f.name)
+                });
+            }
+            const fq = document.getElementById('fileQueuePanel');
+            const ep = document.getElementById('examLabelsPanel');
+            if (fq) fq.style.display = 'block';
+            if (ep) ep.hidden = true;
+            renderFileQueue();
+            const hint = document.getElementById('fileQueueHint');
+            if (hint && queuedFileItems.length) {
+                hint.textContent = `共 ${queuedFileItems.length} 个文件待导入。拖动☰排序后点击「按此顺序导入」。`;
+            }
+        }
+
+        function renderFileQueue() {
+            const ul = document.getElementById('fileQueueList');
+            const btn = document.getElementById('importRunBtn');
+            if (!ul) return;
+            ul.innerHTML = '';
+            queuedFileItems.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'file-queue-item';
+                li.dataset.id = item.id;
+                li.innerHTML = '<span class="drag-handle" draggable="true" title="拖动排序">☰</span>' +
+                    '<input type="text" class="exam-label-input" placeholder="考试名称" value="' + escapeHtml(item.label) + '">' +
+                    '<span class="file-origin-name" title="' + escapeHtml(item.file.name) + '">' + escapeHtml(item.file.name) + '</span>' +
+                    '<button type="button" class="file-row-remove" title="移除此文件">×</button>';
+                ul.appendChild(li);
+            });
+            if (btn) btn.disabled = queuedFileItems.length === 0;
+        }
+
+        function getOrderedQueueItems() {
+            const lis = [...document.querySelectorAll('#fileQueueList .file-queue-item')];
+            const out = [];
+            for (const li of lis) {
+                const id = li.dataset.id;
+                const inp = li.querySelector('.exam-label-input');
+                const item = queuedFileItems.find(x => String(x.id) === String(id));
+                if (!item) continue;
+                if (inp) item.label = inp.value.trim() || examLabelFromFileName(item.file.name);
+                out.push(item);
+            }
+            return out;
+        }
+
+        function syncQueueOrderFromDom() {
+            const ids = [...document.querySelectorAll('#fileQueueList .file-queue-item')].map(li => li.dataset.id);
+            const map = new Map(queuedFileItems.map(x => [String(x.id), x]));
+            queuedFileItems = ids.map(id => map.get(id)).filter(Boolean);
+        }
+
+        function showExamLabelsPanelAfterImport() {
+            const panel = document.getElementById('examLabelsPanel');
+            const row = document.getElementById('examLabelsRow');
+            const fq = document.getElementById('fileQueuePanel');
+            if (fq) fq.style.display = 'none';
+            if (!panel || !row || !parsedSheets.total || !parsedSheets.total.headers) return;
+            row.innerHTML = '';
+            const labels = parsedSheets.total.headers.slice(1);
+            labels.forEach((text, index) => {
+                const wrap = document.createElement('div');
+                wrap.className = 'exam-label-field';
+                const hint = document.createElement('span');
+                hint.className = 'hint';
+                hint.textContent = '第 ' + (index + 1) + ' 次考试';
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.className = 'exam-label-input-post';
+                inp.value = text == null ? '' : String(text);
+                inp.dataset.examIndex = String(index);
+                inp.addEventListener('blur', applyExamLabelsFromPostImportPanel);
+                inp.addEventListener('keydown', ev => {
+                    if (ev.key === 'Enter') inp.blur();
+                });
+                wrap.appendChild(hint);
+                wrap.appendChild(inp);
+                row.appendChild(wrap);
+            });
+            panel.hidden = false;
+        }
+
+        function applyExamLabelsFromPostImportPanel() {
+            const inputs = document.querySelectorAll('#examLabelsRow .exam-label-input-post');
+            if (!inputs.length || !parsedSheets.total || !parsedSheets.total.headers) return;
+            const newLabels = Array.from(inputs).map(inp => {
+                const v = inp.value.trim();
+                return v || '考试';
+            });
+            const n = parsedSheets.total.headers.length - 1;
+            if (newLabels.length !== n) return;
+
+            // 更新所有数据源的 headers，确保排名和分数模式同步
+            parsedSheets.total.headers = ['姓名', ...newLabels];
+            if (parsedSheets.totalScores) {
+                parsedSheets.totalScores.headers = ['姓名', ...newLabels];
+            }
+
+            Object.keys(parsedSheets.subjects).forEach(key => {
+                const ds = parsedSheets.subjects[key];
+                if (ds && ds.headers && ds.headers.length - 1 === n) {
+                    ds.headers = ['姓名', ...newLabels];
+                }
+            });
+
+            Object.keys(parsedSheets.subjectScores).forEach(key => {
+                const ds = parsedSheets.subjectScores[key];
+                if (ds && ds.headers && ds.headers.length - 1 === n) {
+                    ds.headers = ['姓名', ...newLabels];
+                }
+            });
+
+            updateStudentDisplay();
+        }
+
+        function resetImportUi() {
+            parsedSheets = {};
+            queuedFileItems = [];
+            renderFileQueue();
+            const fq = document.getElementById('fileQueuePanel');
+            const ep = document.getElementById('examLabelsPanel');
+            const row = document.getElementById('examLabelsRow');
+            if (fq) fq.style.display = 'block';
+            if (ep) {
+                ep.hidden = true;
+                if (row) row.innerHTML = '';
+            }
+            const hint = document.getElementById('fileQueueHint');
+            if (hint) {
+                hint.textContent = '将文件拖入下方框内，或点击「选择文件」追加；拖动☰调整顺序后点「按此顺序导入」。图表横轴顺序与列表从上到下一致。';
+            }
+            document.getElementById('exportExcel').disabled = true;
+            document.getElementById('printSinglePdfButton').disabled = true;
+            document.getElementById('printAllPdfButton').disabled = true;
+            currentRowIndex = 0;
+            if (document.getElementById('currentStudentName')) {
+                document.getElementById('currentStudentName').textContent = '—';
+            }
+            initCharts();
+        }
+
+        async function runImportFromQueue() {
+            const ordered = getOrderedQueueItems();
+            if (!ordered.length) return;
+            try {
+                if (ordered.length === 1) {
+                    const buf = await readFileAsArrayBuffer(ordered[0].file);
+                    const workbook = XLSX.read(buf, { type: 'array' });
+                    if (workbook.SheetNames.length >= 12) {
+                        parsedSheets = parseWorkbook(workbook);
+                        if (parsedSheets.total && parsedSheets.total.rows.length > 0) {
+                            applyLoadedData();
+                            showExamLabelsPanelAfterImport();
+                            return;
+                        }
+                    }
+                    const label = ordered[0].label.trim() || examLabelFromFileName(ordered[0].file.name);
+                    parsedSheets = buildParsedSheetsFromRawExams([{ workbook, label }]);
+                } else {
+                    const items = [];
+                    for (const q of ordered) {
+                        const buf = await readFileAsArrayBuffer(q.file);
+                        const workbook = XLSX.read(buf, { type: 'array' });
+                        items.push({
+                            workbook,
+                            label: q.label.trim() || examLabelFromFileName(q.file.name)
+                        });
+                    }
+                    parsedSheets = buildParsedSheetsFromRawExams(items);
+                }
+
+                if (!parsedSheets.total || !parsedSheets.total.rows.length) {
+                    throw new Error('没有可用的学生数据');
+                }
+                applyLoadedData();
+                showExamLabelsPanelAfterImport();
+            } catch (err) {
+                console.error('解析Excel失败:', err);
+                alert('导入失败：' + err.message);
+            }
+        }
+
+        function initFileQueueInteractions() {
+            const list = document.getElementById('fileQueueList');
+            const panel = document.getElementById('fileQueuePanel');
+            if (!list || !panel) return;
+
+            let dragSrcId = null;
+
+            list.addEventListener('dragstart', e => {
+                const handle = e.target.closest('.drag-handle');
+                if (!handle) return;
+                const item = handle.closest('.file-queue-item');
+                if (!item) return;
+                dragSrcId = item.dataset.id;
+                item.classList.add('dragging');
+                e.dataTransfer.setData('text/plain', dragSrcId);
+                e.dataTransfer.effectAllowed = 'move';
+            });
+
+            list.addEventListener('dragend', e => {
+                const item = e.target.closest('.file-queue-item');
+                if (item) item.classList.remove('dragging');
+                dragSrcId = null;
+            });
+
+            list.addEventListener('dragover', e => {
+                const item = e.target.closest('.file-queue-item');
+                if (item) e.preventDefault();
+            });
+
+            list.addEventListener('drop', e => {
+                if (e.dataTransfer.files && e.dataTransfer.files.length) {
+                    e.preventDefault();
+                    addFilesToQueue(e.dataTransfer.files);
+                    return;
+                }
+                e.preventDefault();
+                const target = e.target.closest('.file-queue-item');
+                const src = dragSrcId ? list.querySelector('.file-queue-item[data-id="' + dragSrcId + '"]') : null;
+                if (!target || !src || target === src) return;
+                const rect = target.getBoundingClientRect();
+                const before = e.clientY < rect.top + rect.height / 2;
+                if (before) list.insertBefore(src, target);
+                else list.insertBefore(src, target.nextSibling);
+                syncQueueOrderFromDom();
+            });
+
+            list.addEventListener('click', e => {
+                if (e.target.classList.contains('file-row-remove')) {
+                    const li = e.target.closest('.file-queue-item');
+                    if (!li) return;
+                    queuedFileItems = queuedFileItems.filter(x => String(x.id) !== li.dataset.id);
+                    renderFileQueue();
+                    const hint = document.getElementById('fileQueueHint');
+                    if (hint && !queuedFileItems.length) {
+                        hint.textContent = '将文件拖入下方框内，或点击「选择文件」追加；拖动☰调整顺序后点「按此顺序导入」。图表横轴顺序与列表从上到下一致。';
+                    }
+                }
+            });
+
+            panel.addEventListener('dragover', e => {
+                const types = e.dataTransfer.types;
+                const hasFiles = types && (Array.from(types).includes('Files') || (types.contains && types.contains('Files')));
+                if (hasFiles) {
+                    e.preventDefault();
+                    panel.classList.add('drag-over');
+                }
+            });
+            panel.addEventListener('dragleave', e => {
+                if (!panel.contains(e.relatedTarget)) panel.classList.remove('drag-over');
+            });
+            panel.addEventListener('drop', e => {
+                if (!e.dataTransfer.files || !e.dataTransfer.files.length) return;
+                e.preventDefault();
+                panel.classList.remove('drag-over');
+                addFilesToQueue(e.dataTransfer.files);
+            });
+        }
+
+        // --- 事件监听 (部分修改) ---
+        
+        document.getElementById('uploadBtn').addEventListener('click', () => document.getElementById('fileInput').click());
+        document.getElementById('fileInput').addEventListener('change', e => {
+            if (e.target.files && e.target.files.length) addFilesToQueue(e.target.files);
+            e.target.value = '';
+        });
+        document.getElementById('importRunBtn').addEventListener('click', () => runImportFromQueue());
+        const resetImportBtn = document.getElementById('resetImportBtn');
+        if (resetImportBtn) resetImportBtn.addEventListener('click', () => resetImportUi());
+
+        // 解析Excel (保持不变)
+        function parseWorkbook(workbook) {
+            const getSheetData = (sheetNameOrIndex) => {
+                const name = typeof sheetNameOrIndex === 'number' ? workbook.SheetNames[sheetNameOrIndex] : sheetNameOrIndex;
+                if (!name || !workbook.Sheets[name]) return { headers: [], rows: [] };
+                const sheet = workbook.Sheets[name];
+                // 使用 defval: null 确保空单元格不会被跳过，方便数据对齐
+                const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }); 
+                // 过滤掉完全为空的行
+                const validRows = aoa.slice(1).filter(row => row.some(cell => cell !== null && cell !== ''));
+                return { 
+                    headers: aoa[0] || [], 
+                    rows: validRows.map(row => row.map(cell => cell === null ? '' : cell)) // 将 null 替换为空字符串
+                };
+            };
+            // 确保 Sheet 索引正确: 
+            // 0: 总分排名 (total), 1: 本次各科排名 (radar), 
+            // 2-11: 各科目排名历史 (subjects)
+            const data = {
+                total: getSheetData(0), 
+                radar: getSheetData(1), 
+                subjects: {
+                    chinese: getSheetData(2), math: getSheetData(3),
+                    english: getSheetData(4), englishListening: getSheetData(5),
+                    physics: getSheetData(6), history: getSheetData(7),
+                    daofa: getSheetData(8), chemistry: getSheetData(9),
+                    biology: getSheetData(10), geography: getSheetData(11)
+                }
+            };
+            return data;
+        }
+
+        /** 科目内部 id → Excel 工作表中文名（不用 biology 等英文） */
+        const SUBJECT_SHEET_NAME_ZH = {
+            chinese: '语文',
+            math: '数学',
+            english: '英语',
+            englishListening: '英语听说',
+            physics: '物理',
+            history: '历史',
+            daofa: '道法',
+            chemistry: '化学',
+            biology: '生物',
+            geography: '地理'
+        };
+
+        function sanitizeExcelSheetTitle(name) {
+            let s = String(name).replace(/[\\/*?:\[\]]/g, '_').trim();
+            if (s.length > 31) s = s.substring(0, 31);
+            return s || '数据';
+        }
+
+        // 导出Excel：工作表名均为中文
+        document.getElementById('exportExcel').addEventListener('click', function() {
+            const wb = XLSX.utils.book_new();
+            const usedSheetNames = new Set();
+
+            const appendSheet = (title, dataset) => {
+                if (dataset && dataset.headers && dataset.rows) {
+                    if (dataset.rows.length > 0 || dataset.headers.length > 0) {
+                        let t = sanitizeExcelSheetTitle(title);
+                        let n = 2;
+                        while (usedSheetNames.has(t)) {
+                            const suf = '_' + n;
+                            t = sanitizeExcelSheetTitle(title.substring(0, Math.max(1, 31 - suf.length)) + suf);
+                            n++;
+                        }
+                        usedSheetNames.add(t);
+                        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([dataset.headers, ...dataset.rows]), t);
+                    }
+                }
+            };
+
+            appendSheet('总分排名', parsedSheets.total);
+            appendSheet('本次各科排名', parsedSheets.radar);
+
+            RAW_SUBJECT_IDS.forEach(key => {
+                const dataset = parsedSheets.subjects && parsedSheets.subjects[key];
+                if (!dataset) return;
+                const zh = SUBJECT_SHEET_NAME_ZH[key] || key;
+                appendSheet(zh, dataset);
+            });
+
+            XLSX.writeFile(wb, '学生成绩数据分析.xlsx');
+        });
+        
+        // **修改后的单报告导出事件监听器**
+        document.getElementById('printSinglePdfButton').addEventListener('click', () => {
+             // 1. 获取当前学生的姓名
+             const studentNameEl = document.getElementById('currentStudentName');
+             const studentName = studentNameEl ? studentNameEl.textContent.trim() : '未知学生';
+
+             // 2. 构造新的报告标题
+             const originalTitle = document.title; // 备份原始标题
+             const newTitle = `${studentName}-成绩分析报告`;
+
+             // 3. 临时隐藏科目折线图的网格线（splitLine），但保留总分图的网格线
+             const subjectCharts = [...Object.values(echartsInstances.subjects || {})];
+             const originalOptions = [];
+
+             subjectCharts.forEach(chart => {
+                 if (chart && chart.getOption) {
+                     try {
+                         const option = chart.getOption();
+                         originalOptions.push({ chart, option: JSON.parse(JSON.stringify(option)) });
+
+                         // 只隐藏科目折线图的x轴和y轴splitLine
+                         if (option.xAxis && option.xAxis[0]) {
+                             option.xAxis[0].splitLine = { show: false };
+                         }
+                         if (option.yAxis && option.yAxis[0]) {
+                             option.yAxis[0].splitLine = { show: false };
+                         }
+
+                         chart.setOption(option, false);
+                     } catch (e) { console.warn('隐藏网格线失败:', e); }
+                 }
+             });
+
+             // 4. 临时修改页面标题，浏览器会将其作为PDF默认文件名
+             document.title = newTitle;
+
+             // 5. 触发打印
+             // 临时给主容器添加一个 class，确保在 @media print 中不会被隐藏
+             document.getElementById('main-container').classList.add('printing');
+             window.print();
+
+             // 6. 打印完成后恢复原始状态
+             setTimeout(() => {
+                  document.getElementById('main-container').classList.remove('printing');
+                  document.title = originalTitle; // 恢复原始标题
+
+                  // 恢复图表原始选项（显示网格线）
+                  originalOptions.forEach(({ chart, option }) => {
+                      try {
+                          chart.setOption(option, true);
+                      } catch (e) { console.warn('恢复网格线失败:', e); }
+                  });
+             }, 100);
+        });
+
+        // **批量导出所有PDF功能 - 一次性导出优化版**
+        document.getElementById('printAllPdfButton').addEventListener('click', async () => {
+            if (!parsedSheets.total || !parsedSheets.total.rows || parsedSheets.total.rows.length === 0) {
+                alert('没有可导出的学生数据！');
+                return;
+            }
+
+            const totalStudents = parsedSheets.total.rows.length;
+            const originalRowIndex = currentRowIndex;
+            const originalTitle = document.title;
+
+            // 内存检查和警告
+            const estimatedMemoryMB = totalStudents * 8; // 每个学生约8MB
+            if (estimatedMemoryMB > 2048) {
+                if (!confirm(`预估内存使用约${estimatedMemoryMB}MB，可能超过2GB限制。建议分批导出或减少学生数量。是否继续？`)) {
+                    return;
+                }
+            }
+
+            let confirmMessage = `即将导出 ${totalStudents} 个学生的PDF报告，每人一页，合并为一个矢量PDF文件。\n\n提示：导出后将弹出打印对话框，请选择「另存为PDF」以获得最佳效果。是否继续？`;
+
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+
+            // 禁用按钮防止重复点击
+            const printAllBtn = document.getElementById('printAllPdfButton');
+            const originalBtnText = printAllBtn.textContent;
+            printAllBtn.disabled = true;
+            printAllBtn.textContent = '正在准备导出...';
+
+            try {
+                // 使用浏览器原生打印生成矢量PDF
+                await generateAllStudentsPrint(totalStudents, printAllBtn, originalTitle);
+            } catch (error) {
+                console.error('批量导出过程中出现错误:', error);
+                alert('批量导出过程中出现错误：' + error.message);
+            } finally {
+                // 恢复原始状态
+                currentRowIndex = originalRowIndex;
+                updateStudentDisplay();
+                document.title = originalTitle;
+                printAllBtn.disabled = false;
+                printAllBtn.textContent = originalBtnText;
+            }
+        });
+
+        // 批量生成所有学生打印页面 - 使用浏览器原生打印获得矢量PDF
+        async function generateAllStudentsPrint(totalStudents, printAllBtn, originalTitle) {
+            return new Promise(async (resolve) => {
+                const originalCurrentRowIndex = currentRowIndex;
+                const mainContainer = document.getElementById('main-container');
+
+                try {
+                    // 创建临时打印容器
+                    const printContainer = document.createElement('div');
+                    printContainer.id = 'batch-print-container';
+                    printContainer.style.cssText = `
+                        position: absolute;
+                        left: -9999px;
+                        top: 0;
+                        width: 210mm;
+                        background: white;
+                        padding: 0;
+                        box-sizing: border-box;
+                    `;
+                    document.body.appendChild(printContainer);
+
+                    // 为每个学生生成打印页面
+                    for (let i = 0; i < totalStudents; i++) {
+                        const studentName = parsedSheets.total.rows[i][0];
+                        if (!studentName || studentName.trim() === '') continue;
+
+                        printAllBtn.textContent = `正在准备 ${i + 1}/${totalStudents}: ${studentName}`;
+
+                        // 设置当前学生数据并更新显示
+                        currentRowIndex = i;
+                        updateStudentDisplay(studentName, echartsInstances, i);
+
+                        // 等待图表完全渲染
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+
+                        // 隐藏科目折线图的网格线（用于打印），保留总分图和雷达图
+                        const subjectCharts = [...Object.values(echartsInstances.subjects || {})];
+                        subjectCharts.forEach(chart => {
+                            if (chart && chart.getOption) {
+                                try {
+                                    const option = chart.getOption();
+                                    if (option.xAxis && option.xAxis[0]) {
+                                        option.xAxis[0].splitLine = { show: false };
+                                    }
+                                    if (option.yAxis && option.yAxis[0]) {
+                                        option.yAxis[0].splitLine = { show: false };
+                                    }
+                                    chart.setOption(option, false);
+                                } catch (e) { }
+                            }
+                        });
+
+                        // 等待图表更新
+                        await new Promise(resolve => setTimeout(resolve, 200));
+
+                        // 克隆主容器内容
+                        const pageContent = mainContainer.cloneNode(true);
+
+                        // 移除控制面板和导航按钮
+                        const controlsPanel = pageContent.querySelector('.controls-panel');
+                        const navButtons = pageContent.querySelector('.nav-buttons');
+                        if (controlsPanel) controlsPanel.remove();
+                        if (navButtons) navButtons.remove();
+
+                        // 设置打印页面样式（强制A4尺寸，分页）
+                        pageContent.style.cssText = `
+                            width: 210mm;
+                            min-height: 297mm;
+                            padding: 10mm;
+                            box-sizing: border-box;
+                            background: white;
+                            page-break-after: always;
+                            break-after: page;
+                            position: relative;
+                        `;
+
+                        printContainer.appendChild(pageContent);
+
+                        // 每处理3个学生进行一次内存清理
+                        if ((i + 1) % 3 === 0) {
+                            if (window.gc) window.gc();
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        }
+                    }
+
+                    printAllBtn.textContent = '正在启动打印...';
+
+                    // 准备打印：隐藏主容器，显示打印容器
+                    mainContainer.style.display = 'none';
+                    printContainer.style.position = 'static';
+                    printContainer.style.left = '0';
+
+                    // 更新页面标题
+                    const currentDate = new Date().toISOString().slice(0, 10);
+                    document.title = `学生成绩分析报告_${currentDate}_${totalStudents}人`;
+
+                    // 等待DOM更新
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // 触发打印
+                    window.print();
+
+                    // 打印完成后恢复
+                    setTimeout(() => {
+                        // 恢复主容器
+                        mainContainer.style.display = '';
+
+                        // 移除打印容器
+                        if (printContainer.parentNode) {
+                            printContainer.parentNode.removeChild(printContainer);
+                        }
+
+                        // 恢复原始状态
+                        currentRowIndex = originalCurrentRowIndex;
+                        document.title = originalTitle;
+                        updateStudentDisplay();
+
+                        // 恢复科目折线图的网格线显示
+                        setTimeout(() => {
+                            const subjectCharts = [...Object.values(echartsInstances.subjects || {})];
+                            subjectCharts.forEach(chart => {
+                                if (chart && chart.getOption) {
+                                    try {
+                                        const option = chart.getOption();
+                                        if (option.xAxis && option.xAxis[0]) {
+                                            option.xAxis[0].splitLine = { show: true };
+                                        }
+                                        if (option.yAxis && option.yAxis[0]) {
+                                            option.yAxis[0].splitLine = { show: true };
+                                        }
+                                        chart.setOption(option, false);
+                                    } catch (e) { }
+                                }
+                            });
+                        }, 100);
+
+                        printAllBtn.textContent = '导出完成！';
+
+                        if (window.gc) window.gc();
+
+                        resolve();
+                    }, 1000);
+
+                } catch (error) {
+                    console.error(`批量打印时出错:`, error);
+
+                    // 恢复主容器
+                    mainContainer.style.display = '';
+
+                    // 移除打印容器
+                    const printContainer = document.getElementById('batch-print-container');
+                    if (printContainer && printContainer.parentNode) {
+                        printContainer.parentNode.removeChild(printContainer);
+                    }
+
+                    // 恢复原始状态
+                    currentRowIndex = originalCurrentRowIndex;
+                    document.title = originalTitle;
+                    updateStudentDisplay();
+
+                    alert('导出时出错：' + error.message);
+                    resolve();
+                }
+            });
+        }
+
+        // 切换学生
+        document.getElementById('prevStudent').addEventListener('click', function() {
+            const maxRows = parsedSheets.total.rows.length;
+            if (maxRows === 0) return;
+            currentRowIndex = (currentRowIndex - 1 + maxRows) % maxRows;
+            updateStudentDisplay();
+        });
+        
+        document.getElementById('nextStudent').addEventListener('click', function() {
+            const maxRows = parsedSheets.total.rows.length;
+            if (maxRows === 0) return;
+            currentRowIndex = (currentRowIndex + 1) % maxRows;
+            updateStudentDisplay();
+        });
+
+        // 更新图表标题
+        function updateChartTitles() {
+            const isRankingMode = displayMode === 'ranking';
+            
+            // 更新总分图表标题
+            const totalTitle = document.getElementById('totalChartTitle');
+            if (totalTitle) {
+                totalTitle.textContent = isRankingMode ? '总分排名变化' : '总分分数变化';
+            }
+            
+            // 更新雷达图标题
+            const radarTitle = document.getElementById('radarChartTitle');
+            if (radarTitle) {
+                radarTitle.textContent = isRankingMode ? '雷达图（值越小越好）' : '雷达图（值越大越好）';
+            }
+            
+            // 更新科目图表标题
+            const subjectsTitle = document.getElementById('subjectsChartTitle');
+            if (subjectsTitle) {
+                subjectsTitle.textContent = isRankingMode ? '各科目排名变化' : '各科目分数变化';
+            }
+        }
+
+        // 自定义控件事件
+        document.querySelector('.customization-controls').addEventListener('input', (e) => {
+             const id = e.target.id;
+             if(id.includes('Slider')) {
+                document.getElementById(id.replace('Slider', 'Value')).textContent = e.target.value + 'px';
+             }
+             if (parsedSheets.total && parsedSheets.total.rows.length > 0) {
+                updateStudentDisplay();
+             }
+        });
+        document.querySelector('.customization-controls').addEventListener('change', (e) => {
+             const id = e.target.id;
+             
+             // 处理显示模式切换
+             if (id === 'displayModeSelect') {
+                 const newMode = e.target.value;
+                 if (newMode !== displayMode) {
+                     displayMode = newMode;
+                     updateChartTitles();
+                     if (parsedSheets.total && parsedSheets.total.rows.length > 0) {
+                         updateStudentDisplay();
+                     }
+                 }
+                 return;
+             }
+             
+             if (parsedSheets.total && parsedSheets.total.rows.length > 0) {
+                updateStudentDisplay();
+             }
+        });
+
+        // --- 搜索功能 (保持不变) ---
+        const searchInput = document.getElementById('studentSearch');
+        const dropdown = document.getElementById('autocompleteDropdown');
+        let filteredStudents = [];
+        let autocompleteIndex = -1;
+
+        searchInput.addEventListener('input', function() {
+            const searchText = this.value.trim().toLowerCase();
+            if (!searchText || !parsedSheets.total) {
+                dropdown.classList.remove('show');
+                return;
+            }
+            // 确保只搜索第一列 (姓名)
+            const allStudents = (parsedSheets.total.rows || []).map((row, index) => ({ name: String(row[0]).trim(), index }));
+            filteredStudents = allStudents.filter(s => s.name && s.name.toLowerCase().includes(searchText));
+            
+            if (filteredStudents.length > 0) {
+                dropdown.innerHTML = filteredStudents.map((s, i) => `<div class="autocomplete-item" data-index="${i}">${s.name}</div>`).join('');
+            } else {
+                dropdown.innerHTML = '<div class="no-results">未找到匹配的学生</div>';
+            }
+            dropdown.classList.add('show');
+            autocompleteIndex = -1;
+        });
+
+        dropdown.addEventListener('click', function(e) {
+            if (e.target.classList.contains('autocomplete-item')) {
+                selectStudent(parseInt(e.target.dataset.index));
+            }
+        });
+
+        function selectStudent(selectedIndex) {
+            const student = filteredStudents[selectedIndex];
+            if (student) {
+                currentRowIndex = student.index;
+                updateStudentDisplay();
+                searchInput.value = student.name;
+                dropdown.classList.remove('show');
+            }
+        }
+        
+        // 键盘导航
+        searchInput.addEventListener('keydown', function(e) {
+            const items = dropdown.querySelectorAll('.autocomplete-item');
+            if(items.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                autocompleteIndex = (autocompleteIndex + 1) % items.length;
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                autocompleteIndex = (autocompleteIndex - 1 + items.length) % items.length;
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (autocompleteIndex > -1) {
+                    selectStudent(autocompleteIndex);
+                } else if(filteredStudents.length > 0) {
+                    selectStudent(0);
+                }
+                return;
+            } else if (e.key === 'Escape') {
+                dropdown.classList.remove('show');
+                return;
+            } else {
+                return; // 其他按键不处理
+            }
+            
+            items.forEach((item, i) => {
+                item.classList.toggle('active', i === autocompleteIndex);
+            });
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
+        
+        // 页面加载完成
+        window.onload = () => {
+            initCharts();
+            initFileQueueInteractions();
+        };
+        
+        // 辅助函数：根据姓名查找行数据 (保持不变)
+        function findRowByName(dataset, name) {
+            if (!dataset || !dataset.rows || !name) return null;
+            return dataset.rows.find(r => String(r[0]).trim() === String(name).trim());
+        }
+
+        // 辅助函数：检查某列是否有数据（除第一行表头外）
+        function hasColumnData(dataset, columnIndex) {
+            if (!dataset || !dataset.rows || dataset.rows.length === 0) return false;
+            // 检查该列在所有数据行中是否至少有一个非空值
+            return dataset.rows.some(row => {
+                const value = row[columnIndex];
+                return value !== null && value !== '' && value !== undefined;
+            });
+        }
+
+        // 辅助函数：提取用于图表的数据 (包含标签和值)
+        function findRowData(dataset, name) {
+            const row = findRowByName(dataset, name);
+            let labels = [], values = [];
+            if (row && dataset && dataset.headers) {
+                // 默认假设第一列是姓名，从第二列开始是数据
+                const headers = dataset.headers.slice(1);
+                const rowValues = row.slice(1);
+                
+                if (headers && rowValues) {
+                    headers.forEach((header, i) => {
+                        // 【修复点 1】改进数据解析逻辑，确保缺失数据以 null 填充
+                        let rawValue = rowValues[i];
+                        let value = parseFloat(rawValue);
+
+                        // 如果解析失败，尝试从字符串中清理非数字部分再解析 (例如："30.5排名")
+                        if (isNaN(value) && typeof rawValue === 'string' && rawValue !== '') {
+                            const cleaned = rawValue.replace(/[^\d.]/g, '');
+                            value = parseFloat(cleaned);
+                        }
+
+                        // 只有当该列有数据时才计入（检查整个数据集的该列，索引需要+1因为第一列是姓名）
+                        if (header && hasColumnData(dataset, i + 1)) { 
+                            labels.push(header);
+                            // 如果值仍为 NaN 或 null，则将其设为 null (ECharts 会绘制为间断)
+                            const finalValue = isNaN(value) || rawValue === null || rawValue === '' ? null : value;
+                            values.push(finalValue);
+                        }
+                    });
+                }
+            }
+            return { labels, values };
+        }
+        
+        // 获取当前UI控件的配置 (保持不变)
+        function getChartConfig() {
+            const fontSize = document.getElementById('fontSizeSlider').value;
+            // 确保在批量导出时，DOM 不存在时不会报错
+            if (document.documentElement) {
+                document.documentElement.style.setProperty('--chart-font-size', fontSize + 'px');
+            }
+            return {
+                fontSize: parseInt(fontSize),
+                lineColor: document.getElementById('lineColorPicker')?.value || '#5470c6',
+                pointStyle: document.getElementById('pointStyleSelect')?.value || 'circle',
+                pointSize: Number(document.getElementById('pointSizeSlider')?.value || 4),
+                lineWidth: Number(document.getElementById('lineWidthSlider')?.value || 2),
+                showLabels: document.getElementById('showDataLabels')?.checked || false,
+            };
+        }
+
+    </script>
+</body>
+</html>

@@ -1385,7 +1385,7 @@ if (hasValidData) {
                     // 只有在 chartBox 存在于当前 DOM 中才操作 display 属性
                     if (chartBox) chartBox.style.display = 'flex'; 
                     
-                    const finalLabels = Array.from(allLabels).sort();
+                    const finalLabels = Array.from(allLabels);
                     
                     const finalSeries = seriesData.map((s) => {
                         const dataMap = new Map(s.data.labels.map((l, i) => [l, s.data.values[i]]));

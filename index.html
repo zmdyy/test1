@@ -149,6 +149,22 @@
             cursor: grabbing;
         }
 
+        .exam-label-field .drag-handle {
+            cursor: grab;
+            color: #95a5a6;
+            user-select: none;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .exam-label-field .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .exam-label-field.dragging {
+            opacity: 0.55;
+        }
+
         .file-queue-item .exam-label-input {
             flex: 1;
             min-width: 100px;
@@ -226,9 +242,9 @@
         }
 
         .exam-labels-panel .exam-label-field {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .exam-labels-panel .exam-label-field span.hint {
@@ -583,11 +599,10 @@
                         <ul id="fileQueueList" class="file-queue-list"></ul>
                     </div>
                     <div id="examLabelsPanel" class="exam-labels-panel" hidden>
-                        <div class="exam-labels-title">图表中考试名称（与横轴一致，可直接修改）</div>
+                        <div class="exam-labels-title">图表中考试名称（与横轴一致，可直接修改名称）</div>
                         <div id="examLabelsRow" class="exam-labels-row"></div>
                         <button type="button" id="resetImportBtn" style="margin-top:8px;padding:4px 10px;font-size:12px;cursor:pointer;border:1px solid #85c1e9;background:#fff;border-radius:4px;color:#2980b9;">重新选择考试文件</button>
                     </div>
-                    <div id="fileName" class="note">支持：① 原 12 表「排名」模板；② 原始分数表（自动算排名；多行表头；英语笔试/听说分列；多文件按姓名合并）</div>
                 </section>
                 <div class="export-buttons">
                     <button class="export-btn export-excel" id="exportExcel" disabled>导出数据</button>
@@ -645,6 +660,11 @@
                     <label>显示数值:</label>
                     <input type="checkbox" id="showDataLabels" checked class="checkbox">
                 </div>
+                <div class="control-group" style="margin-left: 8px; border-left: 1px solid #ccc; padding-left: 12px;">
+                    <label style="color:#d9534f;">📊 年级均分:</label>
+                    <input type="checkbox" id="showGradeAvgCheckbox">
+                    <span style="font-size:12px;">(仅分数模式)</span>
+                </div>
             </div>
         </div>
 
@@ -696,6 +716,8 @@
         let fileQueueIdSeq = 0;
         /** 显示模式：'ranking' 显示排名数据，'score' 显示原始分数 */
         let displayMode = 'ranking';
+        /** 是否显示年级均分线（仅在分数模式生效） */
+        let showGradeAvg = false;
         
         // 矢量优化：定义 ECharts 渲染器为 SVG
         const CHART_RENDERER = 'svg'; 
@@ -891,85 +913,114 @@
             const seriesName = isScoreMode ? '总分' : '总分排名';
             const yAxisName = isScoreMode ? '分数' : '排名';
             
+            // 构建系列数组
+            const seriesArr = [{
+                name: seriesName, type: 'line', smooth: false,
+                symbol: config.pointStyle, symbolSize: config.pointSize,
+                lineStyle: { width: config.lineWidth }, color: config.lineColor,
+                label: { 
+                    show: config.showLabels, 
+                    position: 'top', 
+                    fontSize: config.fontSize - 2,
+                    formatter: (params) => {
+                        if (params.value === null) return '';
+                        if (isScoreMode) {
+                            return Number.isInteger(params.value) ? params.value : params.value.toFixed(1);
+                        } else {
+                            return Number.isInteger(params.value) ? params.value : '';
+                        }
+                    }
+                },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{
+                        offset: 0, color: config.lineColor + '80' 
+                    }, {
+                        offset: 1, color: config.lineColor + '00'
+                    }])
+                },
+                data: data.values
+            }];
+
+            // 分数模式下显示年级均分线
+            if (isScoreMode && showGradeAvg && parsedSheets.totalScores) {
+                const avgArray = computeAverageForDataset(parsedSheets.totalScores);
+                if (avgArray.length === data.labels.length) {
+                    seriesArr.push({
+                        name: '均分',
+                        type: 'line',
+                        smooth: false,
+                        lineStyle: { type: 'dashed', color: '#999999', width: config.lineWidth },
+                        symbol: 'circle',
+                        symbolSize: config.pointSize - 2,
+                        color: '#999999',
+                        label: {
+                            show: config.showLabels,
+                            position: 'top',
+                            fontSize: config.fontSize - 2,
+                            formatter: (params) => {
+                                if (params.value === null) return '';
+                                return Number.isInteger(params.value) ? params.value : params.value.toFixed(1);
+                            }
+                        },
+                        data: avgArray
+                    });
+                }
+            }
+
             const option = {
                 tooltip: { 
                     trigger: 'axis', 
                     textStyle: { fontSize: config.fontSize - 2 },
-                    // 过滤掉 null 值
                     formatter: function (params) {
-                        const item = params[0];
-                        if (item.value === null) return `${item.name}<br/>${seriesName}: 暂无数据`;
-                        const displayValue = isScoreMode ? 
-                            (Number.isInteger(item.value) ? item.value : item.value.toFixed(1)) :
-                            (Number.isInteger(item.value) ? item.value : item.value.toFixed(2));
-                        return `${item.name}<br/>${seriesName}: ${displayValue}`;
+                        let content = params[0].name + '<br/>';
+                        params.forEach(item => {
+                            if (item.value === null) {
+                                content += item.marker + ' ' + item.seriesName + ': 暂无数据<br/>';
+                                return;
+                            }
+                            const displayValue = isScoreMode ? 
+                                (Number.isInteger(item.value) ? item.value : item.value.toFixed(1)) :
+                                (Number.isInteger(item.value) ? item.value : item.value.toFixed(2));
+                            content += item.marker + ' ' + item.seriesName + ': ' + displayValue + '<br/>';
+                        });
+                        return content;
                     }
                 },
-                // 留白优化：加大边距给横轴标签更多空间
                 grid: { left: '12%', right: '8%', bottom: '20%', top: '12%', containLabel: true },
                 xAxis: {
                     type: 'category',
-                    boundaryGap: true, // 设置为true使标签与刻度对齐
+                    boundaryGap: true,
                     data: data.labels,
                     axisTick: {
-                        alignWithLabel: true // 确保刻度与标签对齐
+                        alignWithLabel: true
                     },
                     axisLabel: {
                         fontSize: config.fontSize - 2,
-                        rotate: 35, // 增加旋转角度避免重叠
-                        interval: 0, // 强制显示所有标签
-                        overflow: 'break', // 允许标签换行
-                        width: 60 // 限制标签宽度
+                        rotate: 35,
+                        interval: 0,
+                        overflow: 'break',
+                        width: 60
                     }
                 },
                 yAxis: { 
                     type: 'value', 
                     name: yAxisName, 
-                    inverse: isRankingMode ? false : false, // 排名模式：数值从小到大；分数模式：数值从小到大
+                    inverse: false,
                     scale: true, 
-                    minInterval: isScoreMode ? null : 1, // 分数模式不强制整数间隔，排名模式确保最小间隔为1
+                    minInterval: isScoreMode ? null : 1,
                     nameTextStyle: { align: 'right', fontSize: config.fontSize - 2 }, 
                     axisLabel: { 
                         fontSize: config.fontSize - 2,
                         formatter: function (value) {
                             if (isScoreMode) {
-                                // 分数模式：显示所有有效数值
                                 return value != null && !isNaN(value) ? value : '';
                             } else {
-                                // 排名模式：只显示正整数
                                 return value > 0 && Number.isInteger(value) ? value : '';
                             }
                         }
                     } 
                 },
-                series: [{
-                    name: seriesName, type: 'line', smooth: false,
-                    symbol: config.pointStyle, symbolSize: config.pointSize,
-                    lineStyle: { width: config.lineWidth }, color: config.lineColor,
-                    label: { 
-                        show: config.showLabels, 
-                        position: 'top', 
-                        fontSize: config.fontSize - 2,
-                        formatter: (params) => {
-                            if (params.value === null) return '';
-                            if (isScoreMode) {
-                                // 分数模式：显示分数，保留1位小数
-                                return Number.isInteger(params.value) ? params.value : params.value.toFixed(1);
-                            } else {
-                                // 排名模式：只显示整数排名
-                                return Number.isInteger(params.value) ? params.value : '';
-                            }
-                        }
-                    },
-                    areaStyle: {
-                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{
-                            offset: 0, color: config.lineColor + '80' 
-                        }, {
-                            offset: 1, color: config.lineColor + '00'
-                        }])
-                    },
-                    data: data.values
-                }]
+                series: seriesArr
             };
             
             try {
@@ -1415,6 +1466,45 @@ if (hasValidData) {
                         };
                     });
 
+                    const originalSeriesCount = finalSeries.length;
+                    // 分数模式下添加年级均分系列
+                    if (displayMode === 'score' && showGradeAvg) {
+                        const pushAvgSeries = (subjName, dataset) => {
+                            const avgArr = computeAverageForDataset(dataset);
+                            if (avgArr.length === finalLabels.length) {
+                                finalSeries.push({
+                                    name: '均分',
+                                    type: 'line',
+                                    smooth: false,
+                                    lineStyle: { type: 'dashed', color: '#999999', width: config.lineWidth },
+                                    symbol: 'circle',
+                                    symbolSize: config.pointSize - 2,
+                                    color: '#999999',
+                                    label: {
+                                        show: config.showLabels,
+                                        position: 'top',
+                                        fontSize: config.fontSize - 4,
+                                        formatter: (params) => {
+                                            if (params.value === null) return '';
+                                            return Number.isInteger(params.value) ? params.value : params.value.toFixed(1);
+                                        }
+                                    },
+                                    data: avgArr
+                                });
+                            }
+                        };
+                        if (subject.id === 'english') {
+                            if (parsedSheets.subjectScores.english) pushAvgSeries('英语', parsedSheets.subjectScores.english);
+                            if (parsedSheets.subjectScores.englishListening) pushAvgSeries('听说', parsedSheets.subjectScores.englishListening);
+                        } else if (subject.id === 'bioGeo') {
+                            if (parsedSheets.subjectScores.biology) pushAvgSeries('生物', parsedSheets.subjectScores.biology);
+                            if (parsedSheets.subjectScores.geography) pushAvgSeries('地理', parsedSheets.subjectScores.geography);
+                        } else {
+                            const ds = parsedSheets.subjectScores[subject.id];
+                            if (ds) pushAvgSeries(subject.name, ds);
+                        }
+                    }
+
                     const yAxisName = isRankingMode ? '排名' : '分数';
                     const option = {
                         tooltip: { 
@@ -1441,10 +1531,10 @@ if (hasValidData) {
                         // 留白优化：加大边距给横轴标签更多空间
                         grid: { left: '12%', right: '8%', top: '16%', bottom: '28%' },
                         legend: {
-                            show: (subject.id === 'english' || subject.id === 'bioGeo') && finalSeries.length > 1,
-                            top: '0%',           // 与y轴名称（排名/分数）同一高度
-                            right: '8%',          // 由上方显示
-                            orient: 'horizontal', // 水平排列
+                            show: (subject.id === 'english' || subject.id === 'bioGeo') && originalSeriesCount > 1,
+                            top: '0%',
+                            right: '8%',
+                            orient: 'horizontal',
                             textStyle: { fontSize: config.fontSize - 4 },
                             itemGap: 10
                         },
@@ -2644,22 +2734,30 @@ if (hasValidData) {
         document.querySelector('.customization-controls').addEventListener('change', (e) => {
              const id = e.target.id;
              
-             // 处理显示模式切换
-             if (id === 'displayModeSelect') {
-                 const newMode = e.target.value;
-                 if (newMode !== displayMode) {
-                     displayMode = newMode;
-                     updateChartTitles();
-                     if (parsedSheets.total && parsedSheets.total.rows.length > 0) {
-                         updateStudentDisplay();
-                     }
-                 }
-                 return;
-             }
-             
-             if (parsedSheets.total && parsedSheets.total.rows.length > 0) {
-                updateStudentDisplay();
-             }
+              // 处理显示模式切换
+              if (id === 'displayModeSelect') {
+                  const newMode = e.target.value;
+                  if (newMode !== displayMode) {
+                      displayMode = newMode;
+                      updateChartTitles();
+                      if (parsedSheets.total && parsedSheets.total.rows.length > 0) {
+                          updateStudentDisplay();
+                      }
+                  }
+                  return;
+              }
+              
+              if (id === 'showGradeAvgCheckbox') {
+                  showGradeAvg = e.target.checked;
+                  if (displayMode === 'score' && parsedSheets.total && parsedSheets.total.rows.length > 0) {
+                      updateStudentDisplay();
+                  }
+                  return;
+              }
+              
+              if (parsedSheets.total && parsedSheets.total.rows.length > 0) {
+                 updateStudentDisplay();
+              }
         });
 
         // --- 搜索功能 (保持不变) ---
@@ -2796,6 +2894,25 @@ if (hasValidData) {
             return { labels, values };
         }
         
+        // 计算数据集各列的年级均分（只读，不修改任何全局数据）
+        function computeAverageForDataset(dataset) {
+            if (!dataset || !dataset.rows || !dataset.headers || dataset.rows.length === 0 || dataset.headers.length < 2) return [];
+            const examCount = dataset.headers.length - 1;
+            const result = new Array(examCount).fill(null);
+            for (let col = 0; col < examCount; col++) {
+                let sum = 0, count = 0;
+                for (let row = 0; row < dataset.rows.length; row++) {
+                    const val = parseFloat(dataset.rows[row][col + 1]);
+                    if (!isNaN(val) && val !== null && val !== '') {
+                        sum += val;
+                        count++;
+                    }
+                }
+                result[col] = count > 0 ? sum / count : null;
+            }
+            return result;
+        }
+
         // 获取当前UI控件的配置 (保持不变)
         function getChartConfig() {
             const fontSize = document.getElementById('fontSizeSlider').value;
